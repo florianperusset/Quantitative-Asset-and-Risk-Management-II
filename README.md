@@ -1,1 +1,1 @@
-# Quantitative Asset & Risk Management II
+# Style rotation on Swiss long-only equity factors
