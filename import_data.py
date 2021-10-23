@@ -20,15 +20,16 @@ def import_spi(sheet):
     for i in range(df.shape[0]):
         df.iloc[i,0] = df.iloc[i,0].split(' - ', 1)[0]
         df.iloc[i,0] = df.iloc[i,0].replace("'", "")
+        df.iloc[i,0] = df.iloc[i,0].replace(".", " ")
         df.iloc[i,0] = re.sub(r"DEAD", "", df.iloc[i,0])
-        df.iloc[i,0] = re.sub('(\\b[A-Za-z] \\b|\\b [A-Za-z]\\b)', '', df.iloc[i,0])
+        #df.iloc[i,0] = re.sub('(\\b[A-Za-z] \\b|\\b [A-Za-z]\\b)', '', df.iloc[i,0])
     
     df = df.rename(columns={'Unnamed: 0':'NAME'})
     df.index = df['NAME']
     del df['NAME']
     
     df = df._convert(numeric=True)
-    df = df.fillna(0)
+    #df = df.fillna(0)
     
     return df
 
@@ -40,7 +41,7 @@ def get_spi():
     
     price_spi = price_old.join(price_new)
     price_spi = price_spi.T
-    del price_spi['#ERROR']
+    #del price_spi['#ERROR']
 
     """COLLECTING PE"""
     pe_old = import_spi('pe old')
@@ -48,7 +49,7 @@ def get_spi():
     
     pe_spi = pe_old.join(pe_new)
     pe_spi = pe_spi.T
-    del pe_spi['#ERROR']
+    #del pe_spi['#ERROR']
     
     """COLLECTING DIVIDEND YIELD"""
     dividend_old = import_spi('dividend yield old')
@@ -56,7 +57,7 @@ def get_spi():
     
     dividend_spi = dividend_old.join(pe_new)
     dividend_spi = dividend_spi.T
-    del dividend_spi['#ERROR']
+    #del dividend_spi['#ERROR']
     
     """COLLECTING DIVIDEND YIELD"""
     dividend_old = import_spi('dividend yield old')
@@ -64,7 +65,7 @@ def get_spi():
     
     dividend_spi = dividend_old.join(dividend_new)
     dividend_spi = dividend_spi.T
-    del dividend_spi['#ERROR']
+    #del dividend_spi['#ERROR']
     
     """COLLECTING MARKET CAP"""
     mktcap_old = import_spi('market cap old')
@@ -72,7 +73,7 @@ def get_spi():
     
     mktcap_spi = mktcap_old.join(mktcap_new)
     mktcap_spi = mktcap_spi.T
-    del mktcap_spi['#ERROR']
+    #del mktcap_spi['#ERROR']
     
     """COLLECTING BETA"""
     beta_old = import_spi('beta old')
@@ -80,7 +81,7 @@ def get_spi():
     
     beta_spi = beta_old.join(beta_new)
     beta_spi = beta_spi.T
-    del beta_spi['#ERROR']
+    #del beta_spi['#ERROR']
     
     """COLLECTING VOLATILITY"""
     vol_old = import_spi('volat old')
@@ -88,7 +89,7 @@ def get_spi():
     
     vol_spi = vol_old.join(vol_new)
     vol_spi = vol_spi.T
-    del vol_spi['#ERROR']
+    #del vol_spi['#ERROR']
     
     """COLLECTING ROE"""
     roe_old = import_spi('roe old')
@@ -96,7 +97,7 @@ def get_spi():
     
     roe_spi = roe_old.join(roe_new)
     roe_spi = roe_spi.T
-    del roe_spi['#ERROR']
+    #del roe_spi['#ERROR']
     
     """COLLECTING ROA"""
     roa_old = import_spi('roa old')
@@ -104,7 +105,7 @@ def get_spi():
     
     roa_spi = roa_old.join(roa_new)
     roa_spi = roa_spi.T
-    del roa_spi['#ERROR']
+    #del roa_spi['#ERROR']
     
     """COLLECTING GROSS MARGIN"""
     gm_old = import_spi('gross margin old')
@@ -112,6 +113,6 @@ def get_spi():
     
     gm_spi = gm_old.join(gm_new)
     gm_spi = gm_spi.T
-    del gm_spi['#ERROR']
+    #del gm_spi['#ERROR']
     
     return (price_spi, pe_spi, dividend_spi, mktcap_spi, beta_spi, vol_spi, roe_spi, roa_spi, gm_spi)
