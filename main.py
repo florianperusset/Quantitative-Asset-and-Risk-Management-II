@@ -20,6 +20,8 @@ from fredapi import Fred
 
 sns.set_theme(style="darkgrid")
 
+os.chdir("/Users/sebastiengorgoni/Documents/HEC Master/Semester 5.1/Quantitative Asset & Risk Management 2/Project")
+
 from import_data import get_spi
 
 # =============================================================================
@@ -71,9 +73,9 @@ roa_spi_cons = get_spi()[7]
 gm_spi = get_spi()[8]
 
 #Benchmark SPI
-price_spi_cons = pd.read_excel("Data/spi_data.xlsx", sheet_name='Sheet1')
+price_spi_cons = pd.read_excel("Data/SPI_DATA_ALL.xlsx", sheet_name='SPI Index')
 price_spi_cons.index = price_spi_cons['Date']
-price_spi_cons = price_spi_cons[(price_spi_cons.index >= '2000-01-01') & (price_spi_cons.index < '2021-01-01')]
+price_spi_cons = price_spi_cons[(price_spi_cons.index >= '2000-01-01')]
 del price_spi_cons['Date']
 price_spi_cons = price_spi_cons.groupby(pd.Grouper(freq="M")).mean() 
 price_spi_cons.index = index
@@ -128,7 +130,7 @@ position_mom = returns_past12_mom.copy()
 for i in position_mom.columns:
     position_mom.loc[returns_past12_mom[i] >= quantile_mom, i] = 1
     position_mom.loc[returns_past12_mom[i] < quantile_mom, i] = 0
-    
+
 #Equal Weight
 position_mom = position_mom.div(position_mom.sum(axis=1), axis=0)
 
@@ -139,6 +141,7 @@ plt.plot(cum_prod(returns_mom))
 
 """VALUE"""
 quantile_value = pe_spi_cons.quantile(q=0.25, axis=1)
+quantile_value.index = index
 
 position_value = pe_spi_cons.copy()
 
@@ -297,5 +300,3 @@ Bounds= [(0 , 1) for i in range(0,returns_mom.shape[1])] #Long only positions
 
 #Optimisation
 res_ERC = minimize(ERC, x0, method='SLSQP', args=(returns_mom),bounds=Bounds,constraints=cons,options={'disp': True})
-
-
