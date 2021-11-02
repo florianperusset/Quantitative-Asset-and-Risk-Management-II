@@ -131,7 +131,9 @@ position_mom = position_mom.div(position_mom.sum(axis=1), axis=0)
 returns_mom = (returns_spi_cons*position_mom).replace(-0, 0).dropna()
 returns_mom = returns_mom.sum(axis=1)
 
+plt.figure()
 plt.plot(cum_prod(returns_mom))
+plt.title("Momentum")
 
 """VALUE"""
 # quantile_value = pe_spi_cons.quantile(q=0.25, axis=1)
@@ -152,7 +154,10 @@ position_value = position_value.div(position_value.sum(axis=1), axis=0)
 returns_value = (returns_spi_cons*position_value).replace(-0, 0).dropna()
 returns_value = returns_value.sum(axis=1)
 
+plt.figure()
 plt.plot(cum_prod(returns_value))
+plt.title("Value")
+
 
 """SIZE (SMALL VS. BIG)"""
 # quantile_size = mktcap_spi_cons.quantile(q=0.10, axis=1)
@@ -172,7 +177,10 @@ position_size = position_size.div(position_size.sum(axis=1), axis=0)
 returns_size = (returns_spi_cons*position_size).replace(-0, 0).dropna()
 returns_size = returns_size.sum(axis=1)
 
+plt.figure()
 plt.plot(cum_prod(returns_size))
+plt.title("Size")
+
 
 """PROFITABILITY"""
 # quantile_profit = roa_spi_cons.quantile(q=0.75, axis=1)
@@ -192,7 +200,10 @@ position_profit = position_profit.div(position_profit.sum(axis=1), axis=0)
 returns_profit = (returns_spi_cons*position_profit).replace(-0, 0).dropna()
 returns_profit = returns_profit.sum(axis=1)
 
+plt.figure()
 plt.plot(cum_prod(returns_profit))
+plt.title("Profitability")
+
 
 """BETA"""
 quantile_beta = beta_spi_cons.quantile(q=0.50, axis=1)
@@ -211,7 +222,9 @@ position_beta = position_beta.div(position_beta.sum(axis=1), axis=0)
 returns_beta = (returns_spi_cons*position_beta).replace(-0, 0).dropna()
 returns_beta = returns_beta.sum(axis=1)
 
+plt.figure()
 plt.plot(cum_prod(returns_beta))
+plt.title("Beta")
 
 """VOLATILITY"""
 # quantile_vol = roll_vol_spi_cons.quantile(q=0.25, axis=1)
@@ -232,8 +245,9 @@ position_vol = position_vol.div(position_vol.sum(axis=1), axis=0)
 returns_vol = (returns_spi_cons*position_vol).replace(-0, 0).dropna()
 returns_vol = returns_vol.sum(axis=1)
 
+plt.figure()
 plt.plot(cum_prod(returns_vol))
-
+plt.title("Volatility")
 
 #WORK UNDER PROGRESS
 
@@ -268,6 +282,33 @@ erc_perf.plot()
 
 
 
+####################################### Parametric weights
+macro_variable = (macro_data['VIX'].iloc[10:] - macro_data['VIX'].mean()) / macro_data['VIX'].std()
+returns_factors_shifted = returns_factors.iloc[:-1]
+risk_aversion = 3
+
+numerator = 0
+denominator = 0
+
+for t in range(len(returns_factors_shifted)):
+    denominator += (macro_variable.iloc[t]**2) * (returns_factors_shifted.iloc[t] @ returns_factors_shifted.iloc[t].transpose())
+    numerator += macro_variable.iloc[t] * returns_factors_shifted.iloc[t]
+theta = np.array((1/risk_aversion) * (numerator/denominator))
+theta = theta / (theta.sum()) # rescale
+
+parametric_returns = (theta * returns_factors).sum(axis=1)
+parametric_returns.plot()
+np.cumprod(1+parametric_returns).plot()
+
+
+parametric_weights = (theta[0] * position_mom + theta[1] * position_value + theta[2] * position_size 
+                      + theta[3] * position_profit + theta[4] * position_beta + theta[5] * position_vol)
+
+
+full_returns = erc_returns + parametric_returns
+plt.figure()
+cum_prod(full_returns).plot()
+plt.title("ERC + Parametric weights cumulated performance")
 
 
 
