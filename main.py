@@ -22,8 +22,7 @@ sns.set_theme(style="darkgrid")
 os.chdir("/Users/Florian/UNIL/Master Finance/2ème année/Premier Semestre/QARM II/Projects/Project")
 
 from import_data import get_spi
-from erc_methods import mcr, erc
-from ridge import criterion_ridge
+from optimization_criteria import mcr, criterion_erc, criterion_ridge
 
 # =============================================================================
 # Import Data
@@ -267,7 +266,7 @@ constraint_set = ({'type':'eq', 'fun': lambda x: sum(x) - 1})
 
 Bounds= [(0 , 1) for i in range(len(returns_factors.columns))]
 
-res_erc = minimize(erc,x0,args=(returns_factors), bounds=Bounds, method='SLSQP',constraints=constraint_set)
+res_erc = minimize(criterion_erc,x0,args=(returns_factors), bounds=Bounds, method='SLSQP',constraints=constraint_set)
 weights_factors_erc = res_erc.x
 
 ## Results
@@ -285,12 +284,11 @@ erc_perf.plot()
 #########################################
 ridge_weights_factors = returns_factors.copy()*0
 
-x0_ridge = returns_factors.copy()*0 + 0.1
 
 constraint_set_ridge = ({'type':'eq', 'fun': lambda x: sum(x) - 1})
 bounds_ridge = [(0, 1) for i in range(len(returns_factors.columns))]
 
-for row in range(1,len(x0_ridge)):
+for row in range(1,len(returns_factors)):
     expected_return = returns_factors.iloc[:row-1].mean()
     varcov_matrix = returns_factors.iloc[:row-1].cov()
     
@@ -308,7 +306,6 @@ plt.figure()
 ridge_weights_factors.loc['2004-01-01':].plot()
 plt.title("Weights Evolution for Ridge Regression")
 plt.tight_layout()
-
 
 
 """PARAMETRIC WEIGHTS WITH ALL MACRO VARIABLES"""
@@ -332,7 +329,6 @@ plt.tight_layout()
     
 # unconditional_weights = (1/risk_aversion) * np.matmul(np.linalg.inv(denominator),numerator)
 
-# theta = np.column_stack((unconditional_weights[0:6],unconditional_weights[6:12],
 #                           unconditional_weights[12:18],unconditional_weights[18:24]))
 
 # conditional_weights_factors = returns_factors_parametric.copy()
@@ -344,6 +340,7 @@ plt.tight_layout()
 # parametric_perf = cum_prod(parametric_returns)
 # plt.figure()
 # plt.title("Parametric Weights Performance")
+# theta = np.column_stack((unconditional_weights[0:6],unconditional_weights[6:12],
 # parametric_perf.plot()
 
 
