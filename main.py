@@ -19,10 +19,11 @@ from fredapi import Fred
 
 sns.set_theme(style="darkgrid")
 
-os.chdir("/Users/Florian/UNIL/Master Finance/2ème année/Premier Semestre/QARM II/Projects/Project")
+os.chdir("/Users/Florian/UNIL/Master Finance/2ème année/Premier Semestre/QARM II/Projects/Project")
 
 from import_data import get_spi
 from optimization_criteria import mcr, criterion_erc, criterion_ridge
+from ptf_performances import cum_prod, perf, risk_historical
 
 # =============================================================================
 # Import Data
@@ -33,11 +34,14 @@ from optimization_criteria import mcr, criterion_erc, criterion_ridge
 price_spi_cons = get_spi()[0] 
 index =  price_spi_cons.index
 
+#Compute the returns
 returns_spi_cons = (price_spi_cons/price_spi_cons.shift(1) - 1).replace(np.nan, 0)
 returns_spi_cons = returns_spi_cons.replace([np.inf, -np.inf], 0)
 
+#Compute the Covariance matrix
 cov_spi_cons = returns_spi_cons.cov()
 
+#Compute the 12-months rolling variance
 m_range = range(0,12)
 
 roll_var_spi_cons = returns_spi_cons.copy()
@@ -49,7 +53,7 @@ for i in m_range:
 roll_vol_spi_cons = np.sqrt(roll_var_spi_cons/(len(m_range)-1)).dropna()
 
 
-### LOAD THE DATA
+"""Load the fundamental data"""
 spi = get_spi()
 
 pe_spi_cons = spi[1] # PE ratios for all constituents
@@ -62,17 +66,16 @@ roa_spi_cons = spi[7] # ROA of all constituents
 gm_spi = spi[8] # Gross Margin of all constituents
 
 
-#Benchmark SPI
-price_spi_index = pd.read_excel("Data/SPI_DATA_ALL.xlsx", sheet_name='SPI Index')
+"""Benchmark SPI"""
+price_spi_index = pd.read_excel("Data_SPI/SPI_DATA_ALL.xlsx", sheet_name='SPI Index')
 price_spi_index.index = price_spi_index['Date']
 price_spi_index = price_spi_index[(price_spi_index.index >= '2000-01-01')]
 del price_spi_index['Date']
 price_spi_index = price_spi_index.groupby(pd.Grouper(freq="M")).mean() 
 price_spi_index.index = index
 
+#Compute the returns
 returns_spi = price_spi_index / price_spi_index.shift(1) - 1
-
-plt.plot(price_spi_cons)
 
 # Alpha Vantage Key: O6PSHZOQS29QHD3E
 
@@ -106,10 +109,6 @@ macro_data = pd.DataFrame({'LT 10y Gov. Bond Yield': gov_bond_ch, 'VIX': vix,
 # =============================================================================
 # Factor Construction
 # =============================================================================
-
-# Create a function to compute the cumulative returns 
-def cum_prod(returns):
-    return (returns + 1).cumprod()*100
 
 """MOMENTUM"""
 returns_past12_mom = (returns_spi_cons + 1).rolling(12).apply(np.prod) - 1
@@ -249,8 +248,6 @@ plt.figure()
 plt.plot(cum_prod(returns_vol))
 plt.title("Volatility")
 
-#WORK UNDER PROGRESS
-
 # Create a df of factor returns to then make an ERC of factors
 # returns_factors = pd.DataFrame({"Momentum":returns_mom.values, "Value":returns_value.values[11:],
 #                                "Size":returns_size.values[11:], "Profitability":returns_profit.values[8:],
@@ -281,8 +278,10 @@ plt.figure()
 plt.title("Factor-ERC portfolio performance")
 erc_perf.plot()
 
-
-
+## Performances
+perf_erc = perf(erc_returns, 'ERC')
+risk_erc = risk_historical(erc_returns, 0.95, 12)
+risk_erc.plot(figsize=(7,5))
 
 #########################################
 ### Ridge
