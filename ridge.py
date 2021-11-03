@@ -6,9 +6,8 @@ Created on Tue Nov  2 09:31:14 2021
 @author: Florian
 """
 
-lbda = 20
 
-def criterion_ridge(weights, expected_returns, varcov_matrix):
+def criterion_ridge(weights, expected_returns, varcov_matrix, lbda=20):
     """
     Computes the value of the criterion to be maximized in a ridge regression approach
     
