@@ -252,10 +252,15 @@ plt.title("Volatility")
 #WORK UNDER PROGRESS
 
 # Create a df of factor returns to then make an ERC of factors
-returns_factors = pd.DataFrame({"Momentum":returns_mom.values, "Value":returns_value.values[11:],
-                               "Size":returns_size.values[11:], "Profitability":returns_profit.values[8:],
-                               "Beta":returns_beta.values[11:], "Volatility":returns_vol.values},
-                              index = returns_mom.index)
+# returns_factors = pd.DataFrame({"Momentum":returns_mom.values, "Value":returns_value.values[11:],
+#                                "Size":returns_size.values[11:], "Profitability":returns_profit.values[8:],
+#                                "Beta":returns_beta.values[11:], "Volatility":returns_vol.values},
+#                               index = returns_mom.index)
+returns_factors = pd.DataFrame({"Momentum":returns_mom, "Value":returns_value,
+                               "Size":returns_size, "Profitability":returns_profit,
+                               "Beta":returns_beta, "Volatility":returns_vol}).dropna()
+
+
 
 # start the optimization
 x0 = np.zeros(len(returns_factors.columns))+0.01 # initial values
@@ -296,9 +301,10 @@ for row in range(1,len(returns_factors)):
     ridge_weights_factors.iloc[row] = res_ridge.x
 
 ridge_returns = np.multiply(returns_factors, ridge_weights_factors).sum(1)
-ridge_perf = cum_prod(ridge_returns.loc['2002-01-01':])
+ridge_perf = cum_prod(ridge_returns)
+spi_perf = cum_prod(returns_spi.loc['2000-12-01':'2021-07-01'])
 plt.figure()
-plt.plot(returns_spi.loc['2002-01-01':].index, ridge_perf, returns_spi.loc['2002-01-01':].index, cum_prod(returns_spi.loc['2002-01-01':]))
+plt.plot(ridge_perf.index, ridge_perf, ridge_perf.index, spi_perf)
 plt.legend(['Ridge Regression Portfolio', 'SPI Index'])
 
 
