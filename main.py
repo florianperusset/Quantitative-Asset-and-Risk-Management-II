@@ -23,6 +23,7 @@ os.chdir("/Users/Florian/UNIL/Master Finance/2ème année/Premier Semestre/QAR
 
 from import_data import get_spi
 from erc_methods import mcr, erc
+from ridge import criterion_ridge
 
 # =============================================================================
 # Import Data
@@ -87,7 +88,7 @@ gov_bond_ch = gov_bond_ch[(gov_bond_ch.index >= '2000-01-01')]
 #CBOE Volatility Index: VIX (Daily)
 vix =  fred.get_series('VIXCLS')
 vix = vix[(vix.index >= '2000-01-01')]
-vix = vix.groupby(pd.Grouper(freq="M")).mean() 
+vix = vix.groupby(pd.Grouper(freq="M")).mean().iloc[:-1]
 vix.index = index
 
 #Consumer Price Index: All Items for Switzerland (Monthly)
@@ -251,8 +252,6 @@ plt.title("Volatility")
 
 #WORK UNDER PROGRESS
 
-
-
 # Create a df of factor returns to then make an ERC of factors
 returns_factors = pd.DataFrame({"Momentum":returns_mom.values, "Value":returns_value.values[11:],
                                "Size":returns_size.values[11:], "Profitability":returns_profit.values[8:],
@@ -271,7 +270,6 @@ Bounds= [(0 , 1) for i in range(len(returns_factors.columns))]
 res_erc = minimize(erc,x0,args=(returns_factors), bounds=Bounds, method='SLSQP',constraints=constraint_set)
 weights_factors_erc = res_erc.x
 
-
 ## Results
 erc_returns = np.multiply(returns_factors, weights_factors_erc).sum(1)
 erc_perf = cum_prod(erc_returns)
@@ -282,33 +280,111 @@ erc_perf.plot()
 
 
 
-####################################### Parametric weights
-macro_variable = (macro_data['VIX'].iloc[10:] - macro_data['VIX'].mean()) / macro_data['VIX'].std()
-returns_factors_shifted = returns_factors.iloc[:-1]
-risk_aversion = 3
+#########################################
+### Ridge
+#########################################
+ridge_weights_factors = returns_factors.copy()*0
 
-numerator = 0
-denominator = 0
+x0_ridge = returns_factors.copy()*0 + 0.1
 
-for t in range(len(returns_factors_shifted)):
-    denominator += (macro_variable.iloc[t]**2) * (returns_factors_shifted.iloc[t] @ returns_factors_shifted.iloc[t].transpose())
-    numerator += macro_variable.iloc[t] * returns_factors_shifted.iloc[t]
-theta = np.array((1/risk_aversion) * (numerator/denominator))
-theta = theta / (theta.sum()) # rescale
+constraint_set_ridge = ({'type':'eq', 'fun': lambda x: sum(x) - 1})
+bounds_ridge = [(0, 1) for i in range(len(returns_factors.columns))]
 
-parametric_returns = (theta * returns_factors).sum(axis=1)
-parametric_returns.plot()
-np.cumprod(1+parametric_returns).plot()
+for row in range(1,len(x0_ridge)):
+    expected_return = returns_factors.iloc[:row-1].mean()
+    varcov_matrix = returns_factors.iloc[:row-1].cov()
+    
+    res_ridge = minimize(criterion_ridge, x0, args=(expected_return,varcov_matrix), bounds=bounds_ridge, method='SLSQP',constraints=constraint_set_ridge)
+    ridge_weights_factors.iloc[row] = res_ridge.x
 
-
-parametric_weights = (theta[0] * position_mom + theta[1] * position_value + theta[2] * position_size 
-                      + theta[3] * position_profit + theta[4] * position_beta + theta[5] * position_vol)
-
-
-full_returns = erc_returns + parametric_returns
+ridge_returns = np.multiply(returns_factors, ridge_weights_factors).sum(1)
+ridge_perf = cum_prod(ridge_returns.loc['2002-01-01':])
 plt.figure()
-cum_prod(full_returns).plot()
-plt.title("ERC + Parametric weights cumulated performance")
+plt.plot(returns_spi.loc['2002-01-01':].index, ridge_perf, returns_spi.loc['2002-01-01':].index, cum_prod(returns_spi.loc['2002-01-01':]))
+plt.legend(['Ridge Regression Portfolio', 'SPI Index'])
+
+
+plt.figure()
+ridge_weights_factors.loc['2004-01-01':].plot()
+plt.title("Weights Evolution for Ridge Regression")
+plt.tight_layout()
+
+
+
+"""PARAMETRIC WEIGHTS WITH ALL MACRO VARIABLES"""
+# returns_factors_parametric = returns_factors.iloc[:-1]
+# macro_variables_parametric = macro_data.iloc[10:]
+# macro_variables_parametric['VIX'] = (macro_variables_parametric['VIX'] - macro_variables_parametric['VIX'].mean()) / macro_variables_parametric['VIX'].std()
+# macro_variables_parametric['LT 10y Gov. Bond Yield'] = (macro_variables_parametric['LT 10y Gov. Bond Yield'] - macro_variables_parametric['LT 10y Gov. Bond Yield'].mean()) / macro_variables_parametric['LT 10y Gov. Bond Yield'].std()
+# macro_variables_parametric['CPI CH'] = (macro_variables_parametric['CPI CH'] - macro_variables_parametric['CPI CH']) / macro_variables_parametric['CPI CH'].std()
+# macro_variables_parametric['Spread US'] = (macro_variables_parametric['Spread US'] - macro_variables_parametric['Spread US'].mean()) / macro_variables_parametric['Spread US'].std()
+
+
+# risk_aversion = 3
+# numerator = np.zeros((24,1))
+# denominator = np.zeros((24,24))
+
+# for t in range(len(macro_variables_parametric)):
+#     z_t = macro_variables_parametric.iloc[t].to_numpy().reshape((len(macro_variables_parametric.iloc[t])),1)
+#     r_t1 = returns_factors_parametric.iloc[t].to_numpy().reshape((len(returns_factors_parametric.iloc[t]),1))
+#     numerator += np.kron(z_t,r_t1)
+#     denominator += np.kron(np.matmul(z_t,np.transpose(z_t)),np.matmul(r_t1,np.transpose(r_t1)))
+    
+# unconditional_weights = (1/risk_aversion) * np.matmul(np.linalg.inv(denominator),numerator)
+
+# theta = np.column_stack((unconditional_weights[0:6],unconditional_weights[6:12],
+#                           unconditional_weights[12:18],unconditional_weights[18:24]))
+
+# conditional_weights_factors = returns_factors_parametric.copy()
+# for row in range(len(macro_variables_parametric)):
+#     conditional_weights_factors.iloc[row] = np.matmul(theta,macro_variables_parametric.iloc[row])
+#     conditional_weights_factors.iloc[row] = conditional_weights_factors.iloc[row] / conditional_weights_factors.iloc[row].sum()
+
+# parametric_returns = np.multiply(conditional_weights_factors,returns_factors_parametric).sum(axis=1)
+# parametric_perf = cum_prod(parametric_returns)
+# plt.figure()
+# plt.title("Parametric Weights Performance")
+# parametric_perf.plot()
+
+
+
+
+""" PARAMETRIC WEIGHTS with VIX only"""
+returns_factors_parametric = returns_factors.iloc[:-1]
+macro_variables_parametric = macro_data['VIX'].iloc[10:]
+macro_variables_parametric = (macro_variables_parametric - macro_variables_parametric.mean())/macro_variables_parametric.std()
+
+risk_aversion = 3
+numerator = np.zeros((6,1))
+denominator = np.zeros((6,6))
+
+for t in range(len(macro_variables_parametric)):
+    z_t = macro_variables_parametric.iloc[t]
+    r_t1 = returns_factors_parametric.iloc[t].to_numpy().reshape((len(returns_factors_parametric.iloc[t]),1))
+    numerator += np.kron(z_t,r_t1)
+    denominator += np.kron(z_t * z_t,np.matmul(r_t1,np.transpose(r_t1)))
+    
+unconditional_weights = (1/risk_aversion) * np.matmul(np.linalg.inv(denominator),numerator)
+
+theta = np.transpose(unconditional_weights)
+
+conditional_weights_factors = returns_factors_parametric.copy()
+for row in range(len(macro_variables_parametric)):
+    conditional_weights_factors.iloc[row] = macro_variables_parametric.iloc[row] * theta
+    conditional_weights_factors.iloc[row] = conditional_weights_factors.iloc[row] / conditional_weights_factors.iloc[row].sum() 
+
+parametric_returns = np.multiply(conditional_weights_factors,returns_factors_parametric).sum(axis=1)
+parametric_perf = cum_prod(parametric_returns)
+plt.figure()
+plt.title("Parametric Weights (long-short) Performance")
+parametric_perf.plot()
+
+
+
+
+
+
+
 
 
 
