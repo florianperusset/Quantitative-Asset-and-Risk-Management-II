@@ -106,9 +106,26 @@ def perf(data, name):
     plt.show()
     plt.close()
     return df
-
-"""VaR and ES using historical method"""    
+  
 def risk_historical(returns, q, n):
+    """
+    This function compute the VaR and ES using historical method. 
+
+    Parameters
+    ----------
+    returns : Dataframe
+        The returns of a given strategy, asset, etc.
+    q : Integer
+        The quantile selected to compute the VaR and ES.
+    n : Integer
+        The number of months to compute the VaR and ES.
+
+    Returns
+    -------
+    df : Dataframe
+        It returns the evolution of VaR and ES.
+
+    """
     VaR_list = []
     ES_list = []
     for i in tqdm(range(returns.shape[0] - n - 1)):
