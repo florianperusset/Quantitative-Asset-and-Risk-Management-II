@@ -29,7 +29,7 @@ def import_spi(sheet):
     
     os.chdir("/Users/sebastiengorgoni/Documents/HEC Master/Semester 5.1/Quantitative Asset & Risk Management 2/Project")
     
-    df = pd.read_excel("Data/SPI_DATA_ALL.xlsx",sheet_name=sheet)
+    df = pd.read_excel("Data_SPI/SPI_DATA_ALL.xlsx",sheet_name=sheet)
     
     df = df.drop(df.columns[2:4], axis=1)
     df = df.drop(df.columns[0], axis=1)
