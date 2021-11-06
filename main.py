@@ -348,7 +348,7 @@ macro_variables_parametric = macro_data.iloc[10:, 1:].copy() #keep as a datafram
 # macro_variables_parametric['CPI CH'] = (macro_variables_parametric['CPI CH'] - macro_variables_parametric['CPI CH'].mean()) / macro_variables_parametric['CPI CH'].std()
 # macro_variables_parametric['Spread US'] = (macro_variables_parametric['Spread US'] - macro_variables_parametric['Spread US'].mean()) / macro_variables_parametric['Spread US'].std()
 
-shape = returns_factors_parametric.shape[1] #*macro_variables_parametric.shape[1]
+shape = returns_factors_parametric.shape[1]*macro_variables_parametric.shape[1]
 
 risk_aversion = 3
 numerator = np.zeros((shape,1))
