@@ -1,28 +1,31 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Fri Oct 22 17:39:27 2021
+Created on Thu Oct 28 10:48:55 2021
 
-@author: Florian
+@author: sebastiengorgoni
 """
 
-import os
 import pandas as pd
 import numpy as np
 import datetime as dt
 
-
-
 def mcr(allocation, returns):
     """
-    Computes the marginal risk contribution for a given allocation and a given set of returns.
-    
-    Parameters:
-        allocation: the given asset allocation
-        r: matrix containing the time series of returns for each asset
-    
-    Returns:
-        the marginal risk contribution
+     Computes the marginal risk contribution for a given allocation and a given set of returns.
+
+    Parameters
+    ----------
+    allocation : TYPE
+        The given asset allocation.
+    returns : TYPE
+        ;atrix containing the time series of returns for each asset.
+
+    Returns
+    -------
+    TYPE
+       the marginal risk contribution.
+
     """
     portfolio = np.multiply(returns, allocation)
     portfolio_r = np.sum(portfolio,1) # sum across columns
@@ -50,7 +53,7 @@ def criterion_erc(allocation, returns):
     criterion = np.sum(criterion) * 1000000000
     return criterion
 
-
+###Ridge Regression###
 def criterion_ridge(weights, expected_returns, varcov_matrix, lbda=20):
     """
     Computes the value of the criterion to be maximized in a ridge regression approach
@@ -67,39 +70,3 @@ def criterion_ridge(weights, expected_returns, varcov_matrix, lbda=20):
     sigma_square = weights @ varcov_matrix @ weights
     
     return -((r_bar/sigma_square) - lbda * (weights**2).sum())
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

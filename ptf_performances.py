@@ -99,7 +99,7 @@ def perf(data, name):
     hit = hit_ratio(data)
     df = pd.DataFrame({name: [exp, vol, sharpe, max_dd.min(), hit]}, index = ['Annualized Return', 'Annualized STD', 'Sharpe Ratio', 'Max Drawdown', 'Hit Ratio'])
     plt.subplot(122)
-    plt.plot((data + 1).cumprod()*100, 'b', label=name)
+    plt.plot(cum_prod(data), 'b', label=name)
     plt.legend(loc='upper left', frameon=True)
     plt.title("Cumulative Return", fontsize=15)
     #plt.savefig('Plot/'+name+'.png')
@@ -141,3 +141,33 @@ def risk_historical(returns, q, n):
     df = pd.DataFrame({'VaR': VaR_list, 'ES': ES_list}, index=returns[n+1:].index)
         
     return df
+
+def TE(weight_ptf, weight_target, returns_ptf):
+    """
+    This function computes the tracking error between
+    a portfolio and a benchmark.
+
+    Parameters
+    ----------
+    weight_ptf : TYPE
+        Weight of our portfolio.
+        
+    weight_target : TYPE
+        Weight the benchmark portfolio.
+    
+    sigma : TYPE
+        Covariance matrix.
+
+    Returns
+    -------
+    vol_month : TYPE
+        Monthly Tracking Error.
+
+    """
+    
+    sigma = returns_ptf.cov().values
+    diff_alloc = weight_ptf - weight_target
+    temp =  np.matmul(diff_alloc.T, sigma)
+    var_month = np.matmul(temp, diff_alloc)
+    vol_month = np.power(var_month, 0.5)
+    return vol_month 
