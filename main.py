@@ -58,18 +58,20 @@ trade_liq_quantile = trade_spi_cons.quantile(0.25, axis=1)
 for i in trade_liq.columns:
     trade_liq.loc[trade_spi_cons[i] >= trade_liq_quantile, i] = 1
 
+trade_liq = trade_liq.replace(0, np.nan)
+
 #price_spi_cons = price_spi_cons.loc[:, ~(trade_liq  == 0).all()] (https://stackoverflow.com/questions/30351125/python-pandas-drop-a-df-column-if-condition)
 
-price_spi_cons = (price_spi_cons*trade_liq).replace(0, np.nan)
-pe_spi_cons = (pe_spi_cons*trade_liq).replace(0, np.nan)
-dividend_spi_cons = (dividend_spi_cons*trade_liq).replace(0, np.nan)
-mktcap_spi_cons = (mktcap_spi_cons*trade_liq).replace(0, np.nan)
-beta_spi_cons = (beta_spi_cons*trade_liq).replace(0, np.nan)
-vol_spi_cons = (vol_spi_cons*trade_liq).replace(0, np.nan)
-roe_spi_cons = (roe_spi_cons*trade_liq).replace(0, np.nan)
-roa_spi_cons = (roa_spi_cons*trade_liq).replace(0, np.nan)
-gm_spi_cons = (gm_spi_cons*trade_liq).replace(0, np.nan)
-eps_spi_cons = (eps_spi_cons*trade_liq).replace(0, np.nan)
+price_spi_cons = (price_spi_cons*trade_liq)
+pe_spi_cons = (pe_spi_cons*trade_liq)
+dividend_spi_cons = (dividend_spi_cons*trade_liq)
+mktcap_spi_cons = (mktcap_spi_cons*trade_liq)
+beta_spi_cons = (beta_spi_cons*trade_liq)
+vol_spi_cons = (vol_spi_cons*trade_liq)
+roe_spi_cons = (roe_spi_cons*trade_liq)
+roa_spi_cons = (roa_spi_cons*trade_liq)
+gm_spi_cons = (gm_spi_cons*trade_liq)
+eps_spi_cons = (eps_spi_cons*trade_liq)
 
 """Benchmark SPI"""
 price_spi_index = pd.read_excel("Data_SPI/SPI_DATA_ALL.xlsx", sheet_name='SPI Index')
