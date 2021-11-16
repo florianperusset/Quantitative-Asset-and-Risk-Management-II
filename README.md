@@ -1,4 +1,4 @@
-# Style rotation on Swiss long-only equity factors
+# Style Rotation on Swiss Long-Only Equity Factors
 
 Autumn 2021 - HEC Lausanne
 
