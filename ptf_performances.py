@@ -62,50 +62,6 @@ def max_drawdown(cum_returns):
     monthly_drawdown = cum_returns/roll_max - 1
     max_monthly_drawdown = monthly_drawdown.cummin()
     return max_monthly_drawdown
-
-
-def perf(data, name):
-    """
-    This function compute all the required performances of a time series.
-    It also plot the monthly returns, the evolution of the mayx drawdown and 
-    the cumulative return of the portfolio vs. benchmark
-
-    Parameters
-    ----------
-    data : TYPE
-        Returns of a given portfolio.
-    benchmark : TYPE
-        Returns of the benchmark.
-    name : TYPE
-        Name of the dataframe.
-    name_plt : TYPE
-        Name given to the plot.
-
-    Returns
-    -------
-    df : TYPE
-        Return a dataframe that contains the annualized returns, volatility,
-        Sharpe ratio, max drawdown and hit ratio.
-
-    """
-    plt.figure(figsize=(20,7))
-    exp = np.mean(data,0)*12
-    vol = np.std(data,0)*np.power(12,0.5)
-    sharpe = exp/vol
-    max_dd = max_drawdown((data+1).cumprod())
-    plt.subplot(121)
-    plt.plot(max_dd, 'g')
-    plt.title("Evolution of Max Drawdown", fontsize=15)
-    hit = hit_ratio(data)
-    df = pd.DataFrame({name: [exp, vol, sharpe, max_dd.min(), hit]}, index = ['Annualized Return', 'Annualized STD', 'Sharpe Ratio', 'Max Drawdown', 'Hit Ratio'])
-    plt.subplot(122)
-    plt.plot(cum_prod(data), 'b', label=name)
-    plt.legend(loc='upper left', frameon=True)
-    plt.title("Cumulative Return", fontsize=15)
-    #plt.savefig('Plot/'+name+'.png')
-    plt.show()
-    plt.close()
-    return df
   
 def risk_historical(returns, q, n):
     """
@@ -142,25 +98,25 @@ def risk_historical(returns, q, n):
         
     return df
 
-def TE(weight_ptf, weight_target, returns_ptf):
+def TE_exante(weight_ptf, weight_target, returns_ptf):
     """
-    This function computes the tracking error between
+    This function computes the ex-ante tracking error between
     a portfolio and a benchmark.
 
     Parameters
     ----------
-    weight_ptf : TYPE
+    weight_ptf : DataFrame
         Weight of our portfolio.
         
-    weight_target : TYPE
+    weight_target : DataFrame
         Weight the benchmark portfolio.
     
-    sigma : TYPE
-        Covariance matrix.
+    returns_ptf : DataFrame
+        Returns of portfolio.
 
     Returns
     -------
-    vol_month : TYPE
+    vol_month : DataFrame
         Monthly Tracking Error.
 
     """
@@ -171,3 +127,71 @@ def TE(weight_ptf, weight_target, returns_ptf):
     var_month = np.matmul(temp, diff_alloc)
     vol_month = np.power(var_month, 0.5)
     return vol_month 
+
+def TE_expost(return_ptf, return_benchmark):
+    """
+    This function computes the ex-post tracking error between
+    the portfolio and the benchmark.    
+
+    Parameters
+    ----------
+    return_ptf : DataFrame
+        DESCRIPTION.
+    return_benchmark : DataFrame
+        DESCRIPTION.
+
+    Returns
+    -------
+    expost_TE : Float
+        It computes the annualized ex-post TE.
+
+    """
+    active_return = return_ptf - return_benchmark
+    expost_TE = active_return.dropna().std()*np.sqrt(12)
+    return expost_TE
+
+def perf(returns_ptf, returns_benchmark, name):
+    """
+    This function compute all the required performances of a time series.
+    It also plot the monthly returns, the evolution of the mayx drawdown and 
+    the cumulative return of the portfolio vs. benchmark
+
+    Parameters
+    ----------
+    data : TYPE
+        Returns of a given portfolio.
+    benchmark : TYPE
+        Returns of the benchmark.
+    name : TYPE
+        Name of the dataframe.
+    name_plt : TYPE
+        Name given to the plot.
+
+    Returns
+    -------
+    df : TYPE
+        Return a dataframe that contains the annualized returns, volatility,
+        Sharpe ratio, max drawdown and hit ratio.
+
+    """
+    plt.figure(figsize=(10,7))
+    exp = np.mean(returns_ptf,0)*12
+    vol = np.std(returns_ptf,0)*np.power(12,0.5)
+    sharpe = exp/vol
+    max_dd = max_drawdown((returns_ptf+1).cumprod())
+    #plt.subplot(121)
+    #plt.plot(max_dd, 'g')
+    plt.title("Evolution of Max Drawdown", fontsize=15)
+    hit = hit_ratio(returns_ptf)
+    expost_TE = TE_expost(returns_ptf, returns_benchmark)
+    df = pd.DataFrame({name: [exp, vol, sharpe, max_dd.min(), hit, expost_TE]}, 
+                      index = ['Annualized Return', 'Annualized STD', 'Sharpe Ratio', 'Max Drawdown', 'Hit Ratio', 'TE Ex-Post'])
+    #plt.subplot(122)
+    plt.plot(cum_prod(returns_ptf), 'b', label=name)
+    plt.plot(cum_prod(returns_benchmark), 'r', label='CW Benchmark')
+    plt.legend(loc='upper left', frameon=True)
+    plt.title("Cumulative Return", fontsize=15)
+    #plt.savefig('Plot/'+name+'.png')
+    plt.show()
+    plt.close()
+    return df
