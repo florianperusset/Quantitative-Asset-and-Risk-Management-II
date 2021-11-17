@@ -8,11 +8,11 @@ from fredapi import Fred
 
 sns.set_theme(style="darkgrid")
 
-os.chdir("/Users/sebastiengorgoni/Documents/HEC Master/Semester 5.1/Quantitative Asset & Risk Management 2/Project")
+os.chdir("/Users/Florian/UNIL/Master Finance/2ème année/Premier Semestre/QARM II/Projects/Project")
 
 from import_data import get_spi
 from optimization_criteria import criterion_erc, criterion_ridge
-from ptf_performances import cum_prod, perf, risk_historical, TE_exante, TE_expost
+from ptf_performance import cum_prod, perf, risk_historical, TE_exante, TE_expost
 
 # Alpha Vantage Key: O6PSHZOQS29QHD3E
 # FRED Key: 2fd4cf1862f877db032b4a6a3a5f1c77
@@ -155,23 +155,30 @@ macro_data = pd.concat([macro_data_df, libor3M_US, libor12M_US], axis=1).dropna(
 # =============================================================================
 
 """MOMENTUM"""
-returns_past12_mom = (returns_spi_cons + 1).rolling(12).apply(np.prod) - 1
-returns_past12_mom = returns_past12_mom.dropna()
+def momentum(series):
+    """
+    Constructs the momentum factor, that is, if the past 12 months returns mean is:
+        < median --> weight = 0
+        > median --> weight = +1
+        = median --> weight = 0
+    """
+    monthly_median = np.percentile(series, 50)
+    long_only = []
+    for asset in range(len(series)):
+        if series.iloc[asset] < monthly_median:
+            long_only += [0]
+        elif series.iloc[asset] == monthly_median:
+            long_only += [0]
+        else:
+            long_only += [1]
+    return pd.Series(long_only, index=series.index)
 
-# quantile_mom = returns_past12_mom.quantile(q=0.90, axis=1)
-quantile_mom = returns_past12_mom.quantile(q=0.50, axis=1)
 
-position_mom = returns_past12_mom.copy()
+returns_past12_mom = returns_spi_cons.rolling(12,closed='left').mean().dropna()
+position_mom = returns_past12_mom.apply(momentum, axis=1)
+position_mom = position_mom.div(position_mom.sum(axis=1),axis=0)
+returns_mom = position_mom.mul(returns_spi_cons).sum(1)
 
-for i in position_mom.columns:
-    position_mom.loc[returns_past12_mom[i] >= quantile_mom, i] = 1
-    position_mom.loc[returns_past12_mom[i] < quantile_mom, i] = 0
-
-#Equal Weight
-position_mom = position_mom.div(position_mom.sum(axis=1), axis=0)
-
-returns_mom = (returns_spi_cons*position_mom).replace(-0, 0).dropna()
-returns_mom = returns_mom.sum(axis=1)
 
 plt.figure()
 plt.plot(cum_prod(returns_mom))
@@ -328,7 +335,7 @@ returns_eps = returns_eps.sum(axis=1)
 
 plt.figure()
 plt.plot(cum_prod(returns_div))
-plt.title("EPS (Quality Earnings")
+plt.title("EPS (Quality Earnings)")
 
 # Create a df of factor returns
 returns_factors = pd.DataFrame({"Momentum":returns_mom, "Value":returns_value,
@@ -357,9 +364,10 @@ for row in range(1,len(returns_factors)): #returns_factors.loc[:start_ptf].shape
 
 erc_returns = np.multiply(returns_factors, weights_factors_erc).sum(1)
 
-## Performances Ridge Regression
-perf_erc = perf(erc_returns[start_ptf:], cw_spi_index[start_ptf:], 'Ridge Returns')
+## Performances ERC
+perf_erc = perf(erc_returns[start_ptf:], cw_spi_index[start_ptf:], 'ERC Returns')
 risk_erc = risk_historical(erc_returns[start_ptf:], 0.95, 12)
+plt.figure()
 risk_erc.plot(figsize=(7,5))
 
 ## Evolution of Factor Weigths
@@ -385,6 +393,7 @@ for row in weights_spi_cons_erc.loc[start_ptf:].index:
     TE_exante_erc.append(temp_TE)
     
 TE_exante_erc = pd.DataFrame({'TE Parametrics': TE_exante_erc}, index=weights_spi_cons_erc.loc[start_ptf:].index)
+plt.figure()
 TE_exante_erc.plot(figsize=(7,5))
 
 ## TE ex-post Between Parametric Weights and CW Benchmark
@@ -410,6 +419,7 @@ ridge_returns = np.multiply(returns_factors, ridge_weights_factors).sum(1)
 ## Performances Ridge Regression
 perf_ridge = perf(ridge_returns[start_ptf:], cw_spi_index[start_ptf:], 'Ridge Returns')
 risk_parametric = risk_historical(ridge_returns[start_ptf:], 0.95, 12)
+plt.plot()
 risk_parametric.plot(figsize=(7,5))
 
 ## Evolution of Weigths
@@ -435,6 +445,7 @@ for row in weights_spi_cons_ridge.loc[start_ptf:].index:
     TE_exante_ridge.append(temp_TE)
     
 TE_exante_ridge = pd.DataFrame({'TE Parametrics': TE_exante_ridge}, index=weights_spi_cons_ridge.loc[start_ptf:].index)
+plt.figure()
 TE_exante_ridge.plot(figsize=(7,5))
 
 ## TE ex-post Between Parametric Weights and CW Benchmark
@@ -481,6 +492,7 @@ parametric_returns = np.multiply(conditional_weights_factors,returns_factors_par
 ## Performances Parametrics
 perf_parametric = perf(parametric_returns[start_ptf:], cw_spi_index[start_ptf:], 'Parametric Returns')
 risk_parametric = risk_historical(parametric_returns[start_ptf:], 0.95, 12)
+plt.figure()
 risk_parametric.plot(figsize=(7,5))
 
 ## Evolution of Weigths
@@ -524,5 +536,57 @@ df_dash.index.name = 'Date'
 df_dash.to_csv('dash-financial-report/data/perf_ptf.csv')
 
 test = pd.read_csv('dash-financial-report/data/perf_ptf.csv')
+
+
+
+
+
+# =============================================================================
+# Momentum of factors
+# =============================================================================
+
+returns_factors_past12_mom = (returns_factors + 1).rolling(12).apply(np.prod) - 1
+returns_factors_past12_mom = returns_factors_past12_mom.dropna()
+
+quantile_factors_mom = returns_factors_past12_mom.quantile(q=0.50, axis=1)
+
+position_factors_mom = returns_factors_past12_mom.copy()
+
+for i in position_factors_mom.columns:
+    position_factors_mom.loc[returns_factors_past12_mom[i] >= quantile_factors_mom, i] = 1
+    position_factors_mom.loc[returns_factors_past12_mom[i] < quantile_factors_mom, i] = 0
+
+#Equal Weight
+position_factors_mom = position_factors_mom.div(position_factors_mom.sum(axis=1), axis=0)
+
+returns_factors_past12_mom = (returns_factors_past12_mom * position_factors_mom).replace(-0, 0).dropna()
+returns_factors_mom = returns_factors_past12_mom.sum(axis=1)
+
+plt.figure()
+plt.plot(cum_prod(returns_factors_mom.loc[start_ptf:]))
+plt.title("Momentum of Factors")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
