@@ -8,11 +8,11 @@ from fredapi import Fred
 
 sns.set_theme(style="darkgrid")
 
-os.chdir("/Users/Florian/UNIL/Master Finance/2ème année/Premier Semestre/QARM II/Projects/Project")
+os.chdir("/Users/sebastiengorgoni/Documents/HEC Master/Semester 5.1/Quantitative Asset & Risk Management 2/Project")
 
 from import_data import get_spi
 from optimization_criteria import criterion_erc, criterion_ridge
-from ptf_performance import cum_prod, perf, risk_historical, TE_exante, TE_expost
+from ptf_performances import cum_prod, perf, risk_historical, TE_exante, TE_expost
 
 # Alpha Vantage Key: O6PSHZOQS29QHD3E
 # FRED Key: 2fd4cf1862f877db032b4a6a3a5f1c77
@@ -53,28 +53,6 @@ gm_spi_cons = spi[8] # Gross Margin of all constituents
 eps_spi_cons = spi[9] #EPS of all constituents
 trade_spi_cons = spi[10] #Volume traded of all constituents
 
-"""Trade Only Liquid Equities"""
-trade_liq = pd.DataFrame(np.zeros(price_spi_cons.shape), columns = price_spi_cons.columns, index = price_spi_cons.index)
-
-trade_liq_quantile = trade_spi_cons.quantile(0.25, axis=1)
-
-for i in trade_liq.columns:
-    trade_liq.loc[trade_spi_cons[i] >= trade_liq_quantile, i] = 1
-    
-trade_liq = trade_liq.replace(0, np.nan)
-
-#price_spi_cons = price_spi_cons.loc[:, ~(trade_liq  == 0).all()] (https://stackoverflow.com/questions/30351125/python-pandas-drop-a-df-column-if-condition)
-
-price_spi_cons = (price_spi_cons*trade_liq)
-pe_spi_cons = (pe_spi_cons*trade_liq)
-dividend_spi_cons = (dividend_spi_cons*trade_liq)
-mktcap_spi_cons = (mktcap_spi_cons*trade_liq)
-beta_spi_cons = (beta_spi_cons*trade_liq)
-vol_spi_cons = (vol_spi_cons*trade_liq)
-roe_spi_cons = (roe_spi_cons*trade_liq)
-roa_spi_cons = (roa_spi_cons*trade_liq)
-gm_spi_cons = (gm_spi_cons*trade_liq)
-eps_spi_cons = (eps_spi_cons*trade_liq)
 
 """Benchmark SPI"""
 price_spi_index = pd.read_excel("Data_SPI/SPI_DATA_ALL.xlsx", sheet_name='SPI Index')
@@ -85,19 +63,6 @@ price_spi_index.index = index
 
 #Compute the returns
 returns_spi = price_spi_index / price_spi_index.shift(1) - 1
-
-plt.plot(cum_prod(returns_spi))
-
-
-"""Cap-Weighted Benchmark"""
-cw_spi_cons = mktcap_spi_cons.divide(mktcap_spi_cons.sum(axis=1), axis='index')
-
-cw_spi_index = (cw_spi_cons*returns_spi_cons).replace(-0, 0).sum(axis=1)
-cw_spi_cons.index = pd.to_datetime(cw_spi_cons.index)
-
-plt.plot(cum_prod(cw_spi_index))
-
-perf_cwbenchmark = perf(cw_spi_index[start_ptf:], cw_spi_index[start_ptf:], 'CW Benchmark')
 
 """Macro Data"""
 fred = Fred(api_key='2fd4cf1862f877db032b4a6a3a5f1c77')
@@ -150,35 +115,72 @@ macro_data_df = pd.DataFrame({'LT 10y Gov. Bond Yield US': gov_bond_US, 'VIX': v
 
 macro_data = pd.concat([macro_data_df, libor3M_US, libor12M_US], axis=1).dropna()
 
+#Lag the Macro Data
+macro_data = macro_data.shift(3) 
+
+# =============================================================================
+# Create a Cap-Weighted Benchmark
+# =============================================================================
+
+"""Cap-Weighted Benchmark"""
+cw_spi_cons = mktcap_spi_cons.divide(mktcap_spi_cons.sum(axis=1), axis='index')
+
+cw_spi_index = (cw_spi_cons*returns_spi_cons).sum(axis=1)
+cw_spi_cons.index = pd.to_datetime(cw_spi_cons.index)
+
+perf_cwbenchmark = perf(cw_spi_index[start_ptf:], cw_spi_index[start_ptf:], 'CW Benchmark')
+
+# =============================================================================
+# Trade Constraint: Trade only Liquid Equities
+# =============================================================================
+
+"""Trade Only Liquid Equities"""
+trade_liq = pd.DataFrame(np.zeros(price_spi_cons.shape), columns = price_spi_cons.columns, index = price_spi_cons.index)
+
+trade_liq_quantile = trade_spi_cons.quantile(0.25, axis=1)
+
+for i in trade_liq.columns:
+    trade_liq.loc[trade_spi_cons[i] >= trade_liq_quantile, i] = 1
+    
+trade_liq = trade_liq.replace(0, np.nan)
+
+#price_spi_cons = price_spi_cons.loc[:, ~(trade_liq  == 0).all()] (https://stackoverflow.com/questions/30351125/python-pandas-drop-a-df-column-if-condition)
+
+price_spi_cons = (price_spi_cons*trade_liq)
+pe_spi_cons = (pe_spi_cons*trade_liq)
+dividend_spi_cons = (dividend_spi_cons*trade_liq)
+mktcap_spi_cons = (mktcap_spi_cons*trade_liq)
+beta_spi_cons = (beta_spi_cons*trade_liq)
+vol_spi_cons = (vol_spi_cons*trade_liq)
+roe_spi_cons = (roe_spi_cons*trade_liq)
+roa_spi_cons = (roa_spi_cons*trade_liq)
+gm_spi_cons = (gm_spi_cons*trade_liq)
+eps_spi_cons = (eps_spi_cons*trade_liq)
+
 # =============================================================================
 # Factor Construction
 # =============================================================================
 
-"""MOMENTUM"""
-def momentum(series):
-    """
-    Constructs the momentum factor, that is, if the past 12 months returns mean is:
-        < median --> weight = 0
-        > median --> weight = +1
-        = median --> weight = 0
-    """
-    monthly_median = np.percentile(series, 50)
-    long_only = []
-    for asset in range(len(series)):
-        if series.iloc[asset] < monthly_median:
-            long_only += [0]
-        elif series.iloc[asset] == monthly_median:
-            long_only += [0]
-        else:
-            long_only += [1]
-    return pd.Series(long_only, index=series.index)
+"""MOMENTUM (Price)"""
+# returns_past12_mom = (returns_spi_cons + 1).rolling(12).apply(np.prod) - 1
+# returns_past12_mom = returns_past12_mom.dropna()
 
+returns_past12_mom = returns_spi_cons.rolling(12,closed='left').mean()  #.replace(np.nan, 0)
 
-returns_past12_mom = returns_spi_cons.rolling(12,closed='left').mean().dropna()
-position_mom = returns_past12_mom.apply(momentum, axis=1)
-position_mom = position_mom.div(position_mom.sum(axis=1),axis=0)
-returns_mom = position_mom.mul(returns_spi_cons).sum(1)
+#quantile_mom = returns_past12_mom.quantile(q=0.90, axis=1)
+quantile_mom = returns_past12_mom.quantile(q=0.50, axis=1)
 
+position_mom = returns_past12_mom.copy()
+
+for i in position_mom.columns:
+    position_mom.loc[returns_past12_mom[i] >= quantile_mom, i] = 1
+    position_mom.loc[returns_past12_mom[i] < quantile_mom, i] = 0
+
+#Equal Weight
+position_mom = position_mom.div(position_mom.sum(axis=1), axis=0).replace(np.nan, 0)
+
+#Compute the returns of the factor
+returns_mom = position_mom.mul(returns_spi_cons).sum(axis=1)
 
 plt.figure()
 plt.plot(cum_prod(returns_mom))
@@ -200,8 +202,8 @@ position_value = position_value.replace(np.nan, 0)
 #Equal Weight
 position_value = position_value.div(position_value.sum(axis=1), axis=0)
 
-returns_value = (returns_spi_cons*position_value).replace(-0, 0).dropna()
-returns_value = returns_value.sum(axis=1)
+#Compute the returns of the factor
+returns_value = position_value.mul(returns_spi_cons).sum(axis=1)
 
 plt.figure()
 plt.plot(cum_prod(returns_value))
@@ -222,31 +224,30 @@ position_size = position_size.replace(np.nan, 0)
 #Equal Weight
 position_size = position_size.div(position_size.sum(axis=1), axis=0)
 
-returns_size = (returns_spi_cons*position_size).replace(-0, 0).dropna()
-returns_size = returns_size.sum(axis=1)
+#Compute the returns of the factor
+returns_size = position_size.mul(returns_spi_cons).sum(axis=1)
 
 plt.figure()
 plt.plot(cum_prod(returns_size))
 plt.title("Size")
 
-
 """PROFITABILITY"""
 # quantile_profit = roa_spi_cons.quantile(q=0.75, axis=1)
-quantile_profit = roa_spi_cons.quantile(q=0.5, axis=1)
+quantile_profit = gm_spi_cons.quantile(q=0.5, axis=1)
 
-position_profit = roa_spi_cons.copy()
+position_profit = gm_spi_cons.copy()
 
 for i in position_profit.columns:
-    position_profit.loc[roa_spi_cons[i] >= quantile_profit, i] = 1
-    position_profit.loc[roa_spi_cons[i] < quantile_profit, i] = 0
+    position_profit.loc[gm_spi_cons[i] >= quantile_profit, i] = 1
+    position_profit.loc[gm_spi_cons[i] < quantile_profit, i] = 0
     
 position_profit = position_profit.replace(np.nan, 0)
 
 #Equal Weight
-position_profit = position_profit.div(position_profit.sum(axis=1), axis=0)
+position_profit = position_profit.div(position_profit.sum(axis=1), axis=0).replace(np.nan, 0)
 
-returns_profit = (returns_spi_cons*position_profit).replace(-0, 0) #.dropna()
-returns_profit = returns_profit.sum(axis=1)
+#Compute the returns of the factor
+returns_profit = position_profit.mul(returns_spi_cons).sum(axis=1)
 
 plt.figure()
 plt.plot(cum_prod(returns_profit))
@@ -266,8 +267,8 @@ position_beta = position_beta.replace(np.nan, 0)
 #Equal Weight
 position_beta = position_beta.div(position_beta.sum(axis=1), axis=0)
 
-returns_beta = (returns_spi_cons*position_beta).replace(-0, 0).dropna()
-returns_beta = returns_beta.sum(axis=1)
+#Compute the returns of the factor
+returns_beta = position_beta.mul(returns_spi_cons).sum(axis=1)
 
 plt.figure()
 plt.plot(cum_prod(returns_beta))
@@ -288,8 +289,8 @@ position_vol = position_vol.replace(np.nan, 0)
 #Equal Weight
 position_vol = position_vol.div(position_vol.sum(axis=1), axis=0)
 
-returns_vol = (returns_spi_cons*position_vol).replace(-0, 0).dropna()
-returns_vol = returns_vol.sum(axis=1)
+#Compute the returns of the factor
+returns_vol = position_vol.mul(returns_spi_cons).sum(axis=1)
 
 plt.figure()
 plt.plot(cum_prod(returns_vol))
@@ -309,8 +310,8 @@ position_div = position_div.replace(np.nan, 0)
 #Equal Weight
 position_div = position_div.div(position_div.sum(axis=1), axis=0)
 
-returns_div = (returns_spi_cons*position_div).replace(-0, 0).dropna()
-returns_div = returns_div.sum(axis=1)
+#Compute the returns of the factor
+returns_div = position_div.mul(returns_spi_cons).sum(axis=1)
 
 plt.figure()
 plt.plot(cum_prod(returns_div))
@@ -330,18 +331,39 @@ position_eps = position_eps.replace(np.nan, 0)
 #Equal Weight
 position_eps = position_eps.div(position_eps.sum(axis=1), axis=0)
 
-returns_eps = (returns_spi_cons*position_eps).replace(-0, 0).dropna()
-returns_eps = returns_eps.sum(axis=1)
+#Compute the returns of the factor
+returns_eps = position_eps.mul(returns_spi_cons).sum(axis=1)
 
 plt.figure()
 plt.plot(cum_prod(returns_div))
-plt.title("EPS (Quality Earnings)")
+plt.title("EPS (Quality Earnings")
 
 # Create a df of factor returns
 returns_factors = pd.DataFrame({"Momentum":returns_mom, "Value":returns_value,
                                "Size":returns_size, "Profitability":returns_profit,
                                "Beta":returns_beta, "Volatility":returns_vol,
-                               "Dividend": returns_div, 'EPS (Earnings Quality)': returns_eps}).dropna()
+                               "Dividend": returns_div, 'EPS (Earnings Quality)': returns_eps}).dropna()['2001-01-01':]
+
+"""Momentum of Factors"""
+returns_factors_past12_mom = returns_factors.rolling(12, closed='left').mean().dropna()
+
+quantile_mom_factor = returns_factors_past12_mom.quantile(q=0.50, axis=1)
+
+position_mom_factor  = returns_factors_past12_mom.copy()
+
+for i in position_mom_factor.columns:
+    position_mom_factor.loc[returns_factors_past12_mom[i] >= quantile_mom_factor, i] = 1
+    position_mom_factor.loc[returns_factors_past12_mom[i] < quantile_mom_factor, i] = 0
+
+#Equal Weight
+position_mom_factor = position_mom_factor.div(position_mom_factor.sum(axis=1), axis=0)
+
+returns_mom_factors = position_mom_factor.mul(returns_factors).sum(axis=1)
+
+plt.figure()
+plt.plot(cum_prod(returns_mom_factors))
+plt.plot(cum_prod(cw_spi_index))
+plt.title("Momentum")
 
 # =============================================================================
 # ERC of Factors
@@ -351,23 +373,35 @@ returns_factors = pd.DataFrame({"Momentum":returns_mom, "Value":returns_value,
 x0 = np.zeros(len(returns_factors.columns))+0.01 # initial values
 
 ## Constraint set
-constraint_set = ({'type':'eq', 'fun': lambda x: sum(x) - 1})
-Bounds= [(0 , 1) for i in range(len(returns_factors.columns))]
+#constraint_set = ({'type':'eq', 'fun': lambda x: sum(x) - 1})
+
+Bounds = [(0 , 1) for i in range(len(returns_factors.columns))]
 
 weights_factors_erc = returns_factors.copy()*0
 
-for row in range(1,len(returns_factors)): #returns_factors.loc[:start_ptf].shape[0]-1
+for row in range(returns_factors.loc[:start_ptf].shape[0]-1, len(returns_factors)): #returns_factors.loc[:start_ptf].shape[0]-1
+    
     exp_returns_factors = returns_factors.iloc[:row-1]
-
-    res_erc = minimize(criterion_erc,x0,args=(exp_returns_factors), bounds=Bounds, method='SLSQP',constraints=constraint_set)
+    
+    constraint_set = ({'type':'eq', 'fun': lambda x: sum(x) - 1},
+                      {'type':'ineq', 'fun': lambda x: 0.05/np.sqrt(12) - TE_exante((position_mom.iloc[row-1].values * x[0]
+                                                                         + position_value.iloc[row-1].values * x[1]
+                                                                         + position_size.iloc[row-1].values * x[2]
+                                                                         + position_profit.iloc[row-1].values * x[3]
+                                                                         + position_beta.iloc[row-1].values * x[4]
+                                                                         + position_vol.iloc[row-1].values * x[5]
+                                                                         + position_div.iloc[row-1].values * x[6]
+                                                                         + position_eps.iloc[row-1].values * x[7]), cw_spi_cons.iloc[row-1].replace(np.nan,0).values, returns_spi_cons.iloc[:row-1])})
+    
+    res_erc = minimize(criterion_erc, x0, args=(exp_returns_factors), bounds=Bounds, method='SLSQP', constraints=constraint_set)
     weights_factors_erc.iloc[row] = res_erc.x
 
-erc_returns = np.multiply(returns_factors, weights_factors_erc).sum(1)
+## Compute the returns of the ERC model
+erc_returns = np.multiply(returns_factors, weights_factors_erc).sum(axis=1)
 
-## Performances ERC
+## Performances ERC model
 perf_erc = perf(erc_returns[start_ptf:], cw_spi_index[start_ptf:], 'ERC Returns')
 risk_erc = risk_historical(erc_returns[start_ptf:], 0.95, 12)
-plt.figure()
 risk_erc.plot(figsize=(7,5))
 
 ## Evolution of Factor Weigths
@@ -377,27 +411,26 @@ plt.title("Weights Evolution for ERC")
 plt.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
 
 ## Create a DF of the total weights of each SPI constituents
-weights_spi_cons_erc = (position_mom.mul(weights_factors_erc['Momentum'], axis=0) 
-                                + position_value.mul(weights_factors_erc['Value'], axis=0)
-                                + position_size.mul(weights_factors_erc['Size'], axis=0)
-                                + position_profit.mul(weights_factors_erc['Profitability'], axis=0)
-                                + position_beta.mul(weights_factors_erc['Beta'], axis=0)
-                                + position_vol.mul(weights_factors_erc['Volatility'], axis=0)
-                                + position_div.mul(weights_factors_erc['Dividend'], axis=0)
-                                + position_eps.mul(weights_factors_erc['EPS (Earnings Quality)'], axis=0)).dropna()[start_ptf:]
+# weights_spi_cons_erc = (position_mom.mul(weights_factors_erc['Momentum'], axis=0) 
+#                                 + position_value.mul(weights_factors_erc['Value'], axis=0)
+#                                 + position_size.mul(weights_factors_erc['Size'], axis=0)
+#                                 + position_profit.mul(weights_factors_erc['Profitability'], axis=0)
+#                                 + position_beta.mul(weights_factors_erc['Beta'], axis=0)
+#                                 + position_vol.mul(weights_factors_erc['Volatility'], axis=0)
+#                                 + position_div.mul(weights_factors_erc['Dividend'], axis=0)
+#                                 + position_eps.mul(weights_factors_erc['EPS (Earnings Quality)'], axis=0)).dropna()[start_ptf:]
 
 ## TE ex-ante Between Parametric Weights and CW Benchmark
-TE_exante_erc = []
-for row in weights_spi_cons_erc.loc[start_ptf:].index:
-    temp_TE = TE_exante(weights_spi_cons_erc.loc[row].values, cw_spi_cons.loc[row].replace(np.nan,0).values, returns_spi_cons.loc[:row])
-    TE_exante_erc.append(temp_TE)
+# TE_exante_erc = []
+# for row in weights_spi_cons_erc.loc[start_ptf:].index:
+#     temp_TE = TE_exante(weights_spi_cons_erc.loc[row].values, cw_spi_cons.loc[row].replace(np.nan,0).values, returns_spi_cons.loc[:row])
+#     TE_exante_erc.append(temp_TE)
     
-TE_exante_erc = pd.DataFrame({'TE Parametrics': TE_exante_erc}, index=weights_spi_cons_erc.loc[start_ptf:].index)
-plt.figure()
-TE_exante_erc.plot(figsize=(7,5))
+# TE_exante_erc = pd.DataFrame({'TE Parametrics': TE_exante_erc}, index=weights_spi_cons_erc.loc[start_ptf:].index)
+# TE_exante_erc.plot(figsize=(7,5))
 
 ## TE ex-post Between Parametric Weights and CW Benchmark
-TE_expost_ridge = TE_expost(erc_returns[start_ptf:], cw_spi_index[start_ptf:])
+TE_expost_erc = TE_expost(erc_returns[start_ptf:], cw_spi_index[start_ptf:])
 
 # =============================================================================
 # Ridge Regression of Factors
@@ -405,21 +438,35 @@ TE_expost_ridge = TE_expost(erc_returns[start_ptf:], cw_spi_index[start_ptf:])
 ridge_weights_factors = returns_factors.copy()*0
 
 constraint_set_ridge = ({'type':'eq', 'fun': lambda x: sum(x) - 1})
+
 bounds_ridge = [(0, 1/5) for i in range(len(returns_factors.columns))]
 
-for row in range(1,len(returns_factors)): #returns_factors.loc[:start_ptf].shape[0]-1
+for row in range(returns_factors.loc[:start_ptf].shape[0]-1,len(returns_factors)): #returns_factors.loc[:start_ptf].shape[0]-1
     expected_return = returns_factors.iloc[:row-1].mean()
     varcov_matrix = returns_factors.iloc[:row-1].cov()
     
-    res_ridge = minimize(criterion_ridge, x0, args=(expected_return,varcov_matrix), bounds=bounds_ridge, method='SLSQP',constraints=constraint_set_ridge)
+    #constraint_set_ridge = ({'type':'eq', 'fun': lambda x: sum(x) - 1})
+
+    constraint_set = ({'type':'eq', 'fun': lambda x: sum(x) - 1},
+                      {'type':'ineq', 'fun': lambda x: 0.05/np.sqrt(12) - TE_exante((position_mom.iloc[row-1].values * x[0]
+                                                                          + position_value.iloc[row-1].values * x[1]
+                                                                          + position_size.iloc[row-1].values * x[2]
+                                                                          + position_profit.iloc[row-1].values * x[3]
+                                                                          + position_beta.iloc[row-1].values * x[4]
+                                                                          + position_vol.iloc[row-1].values * x[5]
+                                                                          + position_div.iloc[row-1].values * x[6]
+                                                                          + position_eps.iloc[row-1].values * x[7]), cw_spi_cons.iloc[row-1].replace(np.nan,0).values, returns_spi_cons.iloc[:row-1])})
+
+    
+    res_ridge = minimize(criterion_ridge, x0, args=(expected_return,varcov_matrix), bounds=bounds_ridge, method='SLSQP',constraints=constraint_set)
     ridge_weights_factors.iloc[row] = res_ridge.x
 
-ridge_returns = np.multiply(returns_factors, ridge_weights_factors).sum(1)    
+## Compute the returns of ridge regression
+ridge_returns = np.multiply(returns_factors, ridge_weights_factors).sum(axis=1)    
 
 ## Performances Ridge Regression
 perf_ridge = perf(ridge_returns[start_ptf:], cw_spi_index[start_ptf:], 'Ridge Returns')
 risk_parametric = risk_historical(ridge_returns[start_ptf:], 0.95, 12)
-plt.plot()
 risk_parametric.plot(figsize=(7,5))
 
 ## Evolution of Weigths
@@ -445,20 +492,18 @@ for row in weights_spi_cons_ridge.loc[start_ptf:].index:
     TE_exante_ridge.append(temp_TE)
     
 TE_exante_ridge = pd.DataFrame({'TE Parametrics': TE_exante_ridge}, index=weights_spi_cons_ridge.loc[start_ptf:].index)
-plt.figure()
 TE_exante_ridge.plot(figsize=(7,5))
 
 ## TE ex-post Between Parametric Weights and CW Benchmark
 TE_expost_ridge = TE_expost(ridge_returns[start_ptf:], cw_spi_index[start_ptf:])
-
 
 # =============================================================================
 # Parametrics using Macro Data (Factor Timing)
 # =============================================================================
 
 """PARAMETRIC WEIGHTS WITH ALL MACRO VARIABLES"""
-returns_factors_parametric = returns_factors.iloc[:-1].copy()
-macro_variables_parametric = macro_data.iloc[11:].copy() #keep as a dataframe and not series: macro_data.iloc[10:, 1:2].copy()
+returns_factors_parametric = returns_factors.iloc[1:-1].copy()
+macro_variables_parametric = macro_data.iloc[12:, 1:2].copy() #keep as a dataframe and not series: macro_data.iloc[10:, 1:2].copy()
 
 shape = returns_factors_parametric.shape[1]*macro_variables_parametric.shape[1]
 
@@ -476,7 +521,7 @@ for time in range(0, len(macro_variables_parametric)):
         numerator += np.kron(z_t,r_t1)
         denominator += np.kron(np.matmul(z_t,np.transpose(z_t)),np.matmul(r_t1,np.transpose(r_t1)))
           
-    if (denominator == 0).mean() != 1: #Forcing a non-singular matrix
+    if ((denominator == 0).mean() != 1) or ((numerator == 0).mean() != 1): #Forcing a non-singular matrix
         
         unconditional_weights = (1/risk_aversion) * np.matmul(np.linalg.inv(denominator),numerator)
         
@@ -492,7 +537,6 @@ parametric_returns = np.multiply(conditional_weights_factors,returns_factors_par
 ## Performances Parametrics
 perf_parametric = perf(parametric_returns[start_ptf:], cw_spi_index[start_ptf:], 'Parametric Returns')
 risk_parametric = risk_historical(parametric_returns[start_ptf:], 0.95, 12)
-plt.figure()
 risk_parametric.plot(figsize=(7,5))
 
 ## Evolution of Weigths
@@ -500,7 +544,6 @@ plt.figure(figsize=(20, 10))
 conditional_weights_factors[start_ptf:].plot()
 plt.title("Weights Evolution for Parametrics Weights")
 plt.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
-
 
 ## Create a DF of the total weights of each SPI constituents
 weights_spi_cons_parametrics = (position_mom.mul(conditional_weights_factors['Momentum'], axis=0) 
@@ -536,57 +579,5 @@ df_dash.index.name = 'Date'
 df_dash.to_csv('dash-financial-report/data/perf_ptf.csv')
 
 test = pd.read_csv('dash-financial-report/data/perf_ptf.csv')
-
-
-
-
-
-# =============================================================================
-# Momentum of factors
-# =============================================================================
-
-returns_factors_past12_mom = (returns_factors + 1).rolling(12).apply(np.prod) - 1
-returns_factors_past12_mom = returns_factors_past12_mom.dropna()
-
-quantile_factors_mom = returns_factors_past12_mom.quantile(q=0.50, axis=1)
-
-position_factors_mom = returns_factors_past12_mom.copy()
-
-for i in position_factors_mom.columns:
-    position_factors_mom.loc[returns_factors_past12_mom[i] >= quantile_factors_mom, i] = 1
-    position_factors_mom.loc[returns_factors_past12_mom[i] < quantile_factors_mom, i] = 0
-
-#Equal Weight
-position_factors_mom = position_factors_mom.div(position_factors_mom.sum(axis=1), axis=0)
-
-returns_factors_past12_mom = (returns_factors_past12_mom * position_factors_mom).replace(-0, 0).dropna()
-returns_factors_mom = returns_factors_past12_mom.sum(axis=1)
-
-plt.figure()
-plt.plot(cum_prod(returns_factors_mom.loc[start_ptf:]))
-plt.title("Momentum of Factors")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
