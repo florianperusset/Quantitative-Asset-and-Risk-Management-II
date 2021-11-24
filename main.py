@@ -8,11 +8,14 @@ from fredapi import Fred
 
 sns.set_theme(style="darkgrid")
 
-os.chdir("/Users/sebastiengorgoni/Documents/HEC Master/Semester 5.1/Quantitative Asset & Risk Management 2/Project")
+os.chdir("/Users/Florian/UNIL/Master Finance/2ème année/Premier Semestre/QARM II/Projects/Project")
+
 
 from import_data import get_spi
 from optimization_criteria import criterion_erc, criterion_ridge
 from ptf_performances import cum_prod, perf, risk_historical, TE_exante, TE_expost
+from factor_building import factor_building
+
 
 # Alpha Vantage Key: O6PSHZOQS29QHD3E
 # FRED Key: 2fd4cf1862f877db032b4a6a3a5f1c77
@@ -162,24 +165,9 @@ eps_spi_cons = (eps_spi_cons*trade_liq)
 # =============================================================================
 
 """MOMENTUM (Price)"""
-# returns_past12_mom = (returns_spi_cons + 1).rolling(12).apply(np.prod) - 1
-# returns_past12_mom = returns_past12_mom.dropna()
-
 returns_past12_mom = returns_spi_cons.rolling(12,closed='left').mean()  #.replace(np.nan, 0)
 
-#quantile_mom = returns_past12_mom.quantile(q=0.90, axis=1)
-quantile_mom = returns_past12_mom.quantile(q=0.50, axis=1)
-
-position_mom = returns_past12_mom.copy()
-
-for i in position_mom.columns:
-    position_mom.loc[returns_past12_mom[i] >= quantile_mom, i] = 1
-    position_mom.loc[returns_past12_mom[i] < quantile_mom, i] = 0
-
-#Equal Weight
-position_mom = position_mom.div(position_mom.sum(axis=1), axis=0).replace(np.nan, 0)
-
-#Compute the returns of the factor
+position_mom = factor_building(returns_past12_mom)
 returns_mom = position_mom.mul(returns_spi_cons).sum(axis=1)
 
 plt.figure()
@@ -187,22 +175,7 @@ plt.plot(cum_prod(returns_mom))
 plt.title("Momentum")
 
 """VALUE"""
-# quantile_value = pe_spi_cons.quantile(q=0.25, axis=1)
-quantile_value = pe_spi_cons.quantile(q=0.5, axis=1)
-quantile_value.index = index
-
-position_value = pe_spi_cons.copy()
-
-for i in position_value.columns:
-    position_value.loc[pe_spi_cons[i] <= quantile_value, i] = 1
-    position_value.loc[pe_spi_cons[i] > quantile_value, i] = 0
-    
-position_value = position_value.replace(np.nan, 0)
-
-#Equal Weight
-position_value = position_value.div(position_value.sum(axis=1), axis=0)
-
-#Compute the returns of the factor
+position_value = factor_building(pe_spi_cons, long_above_quantile=False)
 returns_value = position_value.mul(returns_spi_cons).sum(axis=1)
 
 plt.figure()
@@ -210,21 +183,7 @@ plt.plot(cum_prod(returns_value))
 plt.title("Value")
 
 """SIZE (SMALL VS. BIG)"""
-# quantile_size = mktcap_spi_cons.quantile(q=0.10, axis=1)
-quantile_size = mktcap_spi_cons.quantile(q=0.50, axis=1)
-
-position_size = pe_spi_cons.copy()
-
-for i in position_size.columns:
-    position_size.loc[mktcap_spi_cons[i] <= quantile_size, i] = 1
-    position_size.loc[mktcap_spi_cons[i] > quantile_size, i] = 0
-    
-position_size = position_size.replace(np.nan, 0)
-
-#Equal Weight
-position_size = position_size.div(position_size.sum(axis=1), axis=0)
-
-#Compute the returns of the factor
+position_size = factor_building(mktcap_spi_cons, long_above_quantile=False)
 returns_size = position_size.mul(returns_spi_cons).sum(axis=1)
 
 plt.figure()
@@ -232,21 +191,7 @@ plt.plot(cum_prod(returns_size))
 plt.title("Size")
 
 """PROFITABILITY"""
-# quantile_profit = roa_spi_cons.quantile(q=0.75, axis=1)
-quantile_profit = gm_spi_cons.quantile(q=0.5, axis=1)
-
-position_profit = gm_spi_cons.copy()
-
-for i in position_profit.columns:
-    position_profit.loc[gm_spi_cons[i] >= quantile_profit, i] = 1
-    position_profit.loc[gm_spi_cons[i] < quantile_profit, i] = 0
-    
-position_profit = position_profit.replace(np.nan, 0)
-
-#Equal Weight
-position_profit = position_profit.div(position_profit.sum(axis=1), axis=0).replace(np.nan, 0)
-
-#Compute the returns of the factor
+position_profit = factor_building(gm_spi_cons)
 returns_profit = position_profit.mul(returns_spi_cons).sum(axis=1)
 
 plt.figure()
@@ -254,20 +199,7 @@ plt.plot(cum_prod(returns_profit))
 plt.title("Profitability")
 
 """BETA"""
-quantile_beta = beta_spi_cons.quantile(q=0.50, axis=1)
-
-position_beta = beta_spi_cons.copy()
-
-for i in position_beta.columns:
-    position_beta.loc[beta_spi_cons[i] <= quantile_beta, i] = 1
-    position_beta.loc[beta_spi_cons[i] > quantile_beta, i] = 0
-    
-position_beta = position_beta.replace(np.nan, 0)
-
-#Equal Weight
-position_beta = position_beta.div(position_beta.sum(axis=1), axis=0)
-
-#Compute the returns of the factor
+position_beta = factor_building(beta_spi_cons, long_above_quantile=False)
 returns_beta = position_beta.mul(returns_spi_cons).sum(axis=1)
 
 plt.figure()
@@ -275,21 +207,7 @@ plt.plot(cum_prod(returns_beta))
 plt.title("Beta")
 
 """VOLATILITY"""
-# quantile_vol = roll_vol_spi_cons.quantile(q=0.25, axis=1)
-quantile_vol = roll_vol_spi_cons.quantile(q=0.50, axis=1)
-
-position_vol = roll_vol_spi_cons.copy()
-
-for i in position_vol.columns:
-    position_vol.loc[roll_vol_spi_cons[i] >= quantile_vol, i] = 0
-    position_vol.loc[roll_vol_spi_cons[i] < quantile_vol, i] = 1
-    
-position_vol = position_vol.replace(np.nan, 0)
-
-#Equal Weight
-position_vol = position_vol.div(position_vol.sum(axis=1), axis=0)
-
-#Compute the returns of the factor
+position_vol = factor_building(roll_vol_spi_cons, long_above_quantile=False)
 returns_vol = position_vol.mul(returns_spi_cons).sum(axis=1)
 
 plt.figure()
@@ -297,20 +215,7 @@ plt.plot(cum_prod(returns_vol))
 plt.title("Volatility")
 
 """Dividend"""
-quantile_div = dividend_spi_cons.quantile(q=0.5, axis=1)
-
-position_div = dividend_spi_cons.copy()
-
-for i in position_div.columns:
-    position_div.loc[dividend_spi_cons[i] >= quantile_div, i] = 1
-    position_div.loc[dividend_spi_cons[i] < quantile_div, i] = 0
-    
-position_div = position_div.replace(np.nan, 0)
-
-#Equal Weight
-position_div = position_div.div(position_div.sum(axis=1), axis=0)
-
-#Compute the returns of the factor
+position_div = factor_building(dividend_spi_cons)
 returns_div = position_div.mul(returns_spi_cons).sum(axis=1)
 
 plt.figure()
@@ -318,25 +223,12 @@ plt.plot(cum_prod(returns_div))
 plt.title("Dividend Yield")
 
 """EPS (Quality Earnings)"""
-quantile_eps = eps_spi_cons.quantile(q=0.5, axis=1)
-
-position_eps = eps_spi_cons.copy()
-
-for i in position_eps.columns:
-    position_eps.loc[eps_spi_cons[i] >= quantile_eps, i] = 1
-    position_eps.loc[eps_spi_cons[i] < quantile_eps, i] = 0
-    
-position_eps = position_eps.replace(np.nan, 0)
-
-#Equal Weight
-position_eps = position_eps.div(position_eps.sum(axis=1), axis=0)
-
-#Compute the returns of the factor
+position_eps = factor_building(eps_spi_cons)
 returns_eps = position_eps.mul(returns_spi_cons).sum(axis=1)
 
 plt.figure()
-plt.plot(cum_prod(returns_div))
-plt.title("EPS (Quality Earnings")
+plt.plot(cum_prod(returns_eps))
+plt.title("EPS (Quality Earnings)")
 
 # Create a df of factor returns
 returns_factors = pd.DataFrame({"Momentum":returns_mom, "Value":returns_value,
@@ -579,5 +471,26 @@ df_dash.index.name = 'Date'
 df_dash.to_csv('dash-financial-report/data/perf_ptf.csv')
 
 test = pd.read_csv('dash-financial-report/data/perf_ptf.csv')
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
