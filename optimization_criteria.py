@@ -1,3 +1,11 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Thu Oct 28 10:48:55 2021
+
+@author: sebastiengorgoni
+"""
+
 import pandas as pd
 import numpy as np
 import datetime as dt

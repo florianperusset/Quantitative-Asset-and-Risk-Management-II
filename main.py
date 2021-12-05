@@ -2,6 +2,8 @@ import os
 import pandas as pd
 import numpy as np
 from scipy.optimize import minimize
+from sklearn.linear_model import LinearRegression
+import statsmodels.api as sm
 import matplotlib.pyplot as plt
 import seaborn as sns
 from fredapi import Fred
@@ -53,6 +55,11 @@ roa_spi_cons = spi[7] # ROA of all constituents
 gm_spi_cons = spi[8] # Gross Margin of all constituents
 eps_spi_cons = spi[9] #EPS of all constituents
 trade_spi_cons = spi[10] #Volume traded of all constituents
+industry_spi_cons = spi[11] #Industry of all constituents
+mb_spi_cons = spi[12] #Market-to-book ratio of all constituents
+investment_spi_cons = spi[13] #Investments of all constituents
+profit_spi_cons = spi[14] #Operating Profit Margin of all constituents
+
 
 """Benchmark SPI"""
 price_spi_index = pd.read_excel("Data_SPI/SPI_DATA_ALL.xlsx", sheet_name='SPI Index')
@@ -109,6 +116,13 @@ libor12M_US = libor12M_US[(libor12M_US.index >= '1999-12-01') & (libor12M_US.ind
 libor12M_US = libor12M_US.groupby(pd.Grouper(freq="M")).mean() 
 libor12M_US.index = index
 
+#1-Month London Interbank Offered Rate (LIBOR), based on Swiss Franc
+libor1M_CHF = pd.read_excel("Data_SPI/FRED.xls", sheet_name='1M LIBOR CHF')
+libor1M_CHF = libor1M_CHF.set_index('Date')
+libor1M_CHF = libor1M_CHF[(libor1M_CHF.index >= '1999-12-01') & (libor1M_CHF.index < '2021-10-01')]
+libor1M_CHF = libor1M_CHF.groupby(pd.Grouper(freq="M")).mean() 
+libor1M_CHF.index = index
+
 #Merge all macro data
 macro_data_df = pd.DataFrame({'LT 10y Gov. Bond Yield US': gov_bond_US, 'VIX': vix,
                               'CPI US': cpi_US, 'Spread US': TEDspread_US}).dropna()
@@ -162,7 +176,7 @@ eps_spi_cons = (eps_spi_cons*trade_liq)
 # =============================================================================
 
 """MOMENTUM (Price)"""
-returns_past12_mom = returns_spi_cons.rolling(12,closed='left').mean()
+returns_past12_mom = returns_spi_cons.rolling(12,closed='left').mean()*trade_liq #Include trade constraint
 
 position_mom = factor_building(returns_past12_mom)
 returns_mom = position_mom.mul(returns_spi_cons).sum(axis=1)
@@ -279,7 +293,6 @@ perf_erc = perf(erc_returns[start_ptf:], cw_spi_index[start_ptf:], 'ERC Returns'
 risk_erc = risk_historical(erc_returns[start_ptf:], 0.95, 12)
 risk_erc.plot(figsize=(7,5))
 
-
 # =============================================================================
 # ERC of Factors
 # =============================================================================
@@ -383,7 +396,7 @@ def build_ridge(TE_target, check_TE=True):
         
     return ridge_weights_factors
 
-ridge_weights_factors = build_ridge(0.05, True)
+ridge_weights_factors = build_ridge(0.05, False)
 
 ## Compute the returns of ridge regression
 ridge_returns = np.multiply(returns_factors, ridge_weights_factors).sum(axis=1)    
@@ -460,6 +473,8 @@ for i in macro_data.columns:
     
     macro_returns_parametrics[i] = parametric_returns
     
+#macro_returns_parametrics.apply(cum_prod).plot()
+
 parametric_returns = macro_returns_parametrics.sum(axis=1)/macro_returns_parametrics.shape[1]
     
 ## Performances Parametrics
@@ -483,16 +498,281 @@ weights_spi_cons_parametrics = (position_mom.mul(conditional_weights_factors['Mo
                                 + position_div.mul(conditional_weights_factors['Dividend'], axis=0)
                                 + position_eps.mul(conditional_weights_factors['EPS (Earnings Quality)'], axis=0)).dropna()
 
-parametric_returns = parametric_returns*0.6 + cw_spi_index*0.4
+parametric_returns = parametric_returns*0.55 + cw_spi_index*0.45
 
 ## TE ex-post Between Parametric Weights and CW Benchmark
 TE_expost_parametrics = TE_expost(parametric_returns[start_ptf:], cw_spi_index[start_ptf:])
 
 # =============================================================================
+# Fama-French Factor Analysis
+# =============================================================================
+
+price_spi_cons = spi[0] # Price of all constituents
+pe_spi_cons = spi[1] # PE ratios for all constituents
+mktcap_spi_cons = spi[3] # Market cap for all consituents
+mb_spi_cons = spi[12] #Market-to-book ratio of all constituents
+bm_spi_cons = 1/spi[12] #Book-to-market of all constituents
+profit_spi_cons = spi[14] #Operating Profit Margin of all constituents
+
+
+#Compute the returns
+returns_spi_cons = (price_spi_cons/price_spi_cons.shift(1) - 1).replace(np.nan, 0)
+returns_spi_cons = returns_spi_cons.replace([np.inf, -np.inf], 0)
+
+returns_past12 = returns_spi_cons.rolling(12,closed='left').mean()
+
+"""Market Factor"""
+excess_return_market = returns_spi['SPI INDEX'] - libor1M_CHF['1M Libor CHF']/100
+
+"""SMB Factor"""
+def SMB_bm():
+    position_small = factor_building(mktcap_spi_cons, quantile=0.5, long_above_quantile=False, ew_position=False).replace(0, np.nan)
+    position_small_value = factor_building((bm_spi_cons*position_small), quantile=0.75, long_above_quantile=True, ew_position=False)
+    position_small_growth = factor_building((bm_spi_cons*position_small), quantile=0.25, long_above_quantile=False, ew_position=False)
+    
+    position_big = factor_building(mktcap_spi_cons, quantile=0.5, long_above_quantile=True, ew_position=False).replace(0, np.nan)
+    position_big_value = factor_building((bm_spi_cons*position_big), quantile=0.75, long_above_quantile=True, ew_position=False)
+    position_big_growth = factor_building((bm_spi_cons*position_big), quantile=0.25, long_above_quantile=False, ew_position=False)
+    
+    returns_small_value = (position_small_value*returns_spi_cons).replace(0, np.nan).mean(axis=1)
+    returns_small_growth = (position_small_growth*returns_spi_cons).replace(0, np.nan).mean(axis=1)
+    
+    returns_big_value = (position_big_value*returns_spi_cons).replace(0, np.nan).mean(axis=1)
+    returns_big_growth = (position_big_growth*returns_spi_cons).replace(0, np.nan).mean(axis=1)
+    
+    smb_bm = 0.5*(returns_small_value + returns_small_growth) - 0.5*(returns_big_value + returns_big_growth)
+    
+    return smb_bm
+
+smb_bm = SMB_bm()
+
+def SMB_op():
+    position_small = factor_building(mktcap_spi_cons, quantile=0.5, long_above_quantile=False, ew_position=False).replace(0, np.nan)
+    position_small_robust = factor_building((profit_spi_cons*position_small), quantile=0.75, long_above_quantile=True, ew_position=False)
+    position_small_weak = factor_building((profit_spi_cons*position_small), quantile=0.25, long_above_quantile=False, ew_position=False)
+    
+    position_big = factor_building(mktcap_spi_cons, quantile=0.5, long_above_quantile=True, ew_position=False).replace(0, np.nan)
+    position_big_robust = factor_building((profit_spi_cons*position_big), quantile=0.75, long_above_quantile=True, ew_position=False)
+    position_big_weak = factor_building((profit_spi_cons*position_big), quantile=0.25, long_above_quantile=False, ew_position=False)
+    
+    returns_small_robust = (position_small_robust*returns_spi_cons).replace(0, np.nan).mean(axis=1)
+    returns_small_weak = (position_small_weak*returns_spi_cons).replace(0, np.nan).mean(axis=1)
+    
+    returns_big_robust = (position_big_robust*returns_spi_cons).replace(0, np.nan).mean(axis=1)
+    returns_big_weak = (position_big_weak*returns_spi_cons).replace(0, np.nan).mean(axis=1)
+    
+    smb_op = 0.5*(returns_small_robust + returns_small_weak) - 0.5*(returns_big_robust + returns_big_weak)
+    
+    return smb_op
+
+def SMB_inv():
+    position_small = factor_building(mktcap_spi_cons, quantile=0.5, long_above_quantile=False, ew_position=False).replace(0, np.nan)
+    position_small_aggressive = factor_building((investment_spi_cons*position_small), quantile=0.55, long_above_quantile=True, ew_position=False)
+    position_small_conservative = factor_building((investment_spi_cons*position_small), quantile=0.45, long_above_quantile=False, ew_position=False)
+    
+    position_big = factor_building(mktcap_spi_cons, quantile=0.5, long_above_quantile=True, ew_position=False).replace(0, np.nan)
+    position_big_aggressive = factor_building((investment_spi_cons*position_big), quantile=0.55, long_above_quantile=True, ew_position=False)
+    position_big_conservative = factor_building((investment_spi_cons*position_big), quantile=0.45, long_above_quantile=False, ew_position=False)
+    
+    returns_small_aggressive = (position_small_aggressive*returns_spi_cons).replace(0, np.nan).mean(axis=1)
+    returns_small_conservative = (position_small_conservative*returns_spi_cons).replace(0, np.nan).mean(axis=1)
+    
+    returns_big_aggressive = (position_big_aggressive*returns_spi_cons).replace(0, np.nan).mean(axis=1)
+    returns_big_conservative = (position_big_conservative*returns_spi_cons).replace(0, np.nan).mean(axis=1)
+    
+    smb_inv = 0.5*(returns_small_aggressive + returns_small_conservative) - 0.5*(returns_big_aggressive + returns_big_conservative)
+    
+    return smb_inv
+    
+smb = (SMB_bm() + SMB_op() + SMB_inv())/3
+
+"""HML Factor"""
+def HML():
+    position_small = factor_building(mktcap_spi_cons, quantile=0.5, long_above_quantile=False, ew_position=False).replace(0, np.nan)
+    position_small_value = factor_building((bm_spi_cons*position_small), quantile=0.75, long_above_quantile=True, ew_position=False)
+    position_small_growth = factor_building((bm_spi_cons*position_small), quantile=0.25, long_above_quantile=False, ew_position=False)
+    
+    position_big = factor_building(mktcap_spi_cons, quantile=0.5, long_above_quantile=True, ew_position=False).replace(0, np.nan)
+    position_big_value = factor_building((bm_spi_cons*position_big), quantile=0.75, long_above_quantile=True, ew_position=False)
+    position_big_growth = factor_building((bm_spi_cons*position_big), quantile=0.25, long_above_quantile=False, ew_position=False)
+    
+    returns_small_value = (position_small_value*returns_spi_cons).replace(0, np.nan).mean(axis=1)
+    returns_small_growth = (position_small_growth*returns_spi_cons).replace(0, np.nan).mean(axis=1)
+    
+    returns_big_value = (position_big_value*returns_spi_cons).replace(0, np.nan).mean(axis=1)
+    returns_big_growth = (position_big_growth*returns_spi_cons).replace(0, np.nan).mean(axis=1)
+    
+    hml = 0.5*(returns_small_value + returns_big_value) - 0.5*(returns_small_growth + returns_big_growth)
+    
+    return hml
+
+hml = HML()
+
+"""WML Factor"""
+def WML():
+    position_small = factor_building(mktcap_spi_cons, quantile=0.5, long_above_quantile=False, ew_position=False).replace(0, np.nan)
+    position_small_high = factor_building(returns_past12*position_small, quantile=0.75, long_above_quantile=True, ew_position=False)
+    position_small_low = factor_building(returns_past12*position_small, quantile=0.25, long_above_quantile=False, ew_position=False)
+    
+    position_big = factor_building(mktcap_spi_cons, quantile=0.5, long_above_quantile=True, ew_position=False).replace(0, np.nan)
+    position_big_high = factor_building(returns_past12*position_big, quantile=0.75, long_above_quantile=True, ew_position=False)
+    position_big_low = factor_building(returns_past12*position_big, quantile=0.25, long_above_quantile=False, ew_position=False)
+    
+    returns_small_high = (position_small_high*returns_spi_cons).replace(0, np.nan).mean(axis=1)
+    returns_small_low = (position_small_low*returns_spi_cons).replace(0, np.nan).mean(axis=1)
+    
+    returns_big_high = (position_big_high*returns_spi_cons).replace(0, np.nan).mean(axis=1)
+    returns_big_low = (position_big_low*returns_spi_cons).replace(0, np.nan).mean(axis=1)
+    
+    wml = 0.5*(returns_small_high + returns_big_high) - 0.5*(returns_small_low + returns_big_low)
+    
+    return wml
+
+wml = WML()
+
+"""RMW Factor"""
+def RMW():
+    position_small = factor_building(mktcap_spi_cons, quantile=0.5, long_above_quantile=False, ew_position=False).replace(0, np.nan)
+    position_small_robust = factor_building((profit_spi_cons*position_small), quantile=0.75, long_above_quantile=True, ew_position=False)
+    position_small_weak = factor_building((profit_spi_cons*position_small), quantile=0.25, long_above_quantile=False, ew_position=False)
+    
+    position_big = factor_building(mktcap_spi_cons, quantile=0.5, long_above_quantile=True, ew_position=False).replace(0, np.nan)
+    position_big_robust = factor_building((profit_spi_cons*position_big), quantile=0.75, long_above_quantile=False, ew_position=False)
+    position_big_weak = factor_building((profit_spi_cons*position_big), quantile=0.25, long_above_quantile=True, ew_position=False)
+    
+    returns_small_robust = (position_small_robust*returns_spi_cons).replace(0, np.nan).mean(axis=1)
+    returns_small_weak = (position_small_weak*returns_spi_cons).replace(0, np.nan).mean(axis=1)
+    
+    returns_big_robust = (position_big_robust*returns_spi_cons).replace(0, np.nan).mean(axis=1)
+    returns_big_weak = (position_big_weak*returns_spi_cons).replace(0, np.nan).mean(axis=1)
+    
+    rmw = 0.5*(returns_small_robust + returns_big_robust) - 0.5*(returns_small_weak + returns_big_weak)
+    
+    return rmw
+
+rmw = RMW()
+
+"""CMA Factor"""
+def CMA():
+    position_small = factor_building(mktcap_spi_cons, quantile=0.5, long_above_quantile=False, ew_position=False).replace(0, np.nan)
+    position_small_aggressive = factor_building((investment_spi_cons*position_small), quantile=0.55, long_above_quantile=True, ew_position=False)
+    position_small_conservative = factor_building((investment_spi_cons*position_small), quantile=0.45, long_above_quantile=False, ew_position=False)
+
+    position_big = factor_building(mktcap_spi_cons, quantile=0.5, long_above_quantile=True, ew_position=False).replace(0, np.nan)
+    position_big_aggressive = factor_building((investment_spi_cons*position_big), quantile=0.55, long_above_quantile=True, ew_position=False)
+    position_big_conservative = factor_building((investment_spi_cons*position_big), quantile=0.45, long_above_quantile=False, ew_position=False)
+
+    returns_small_aggressive = (position_small_aggressive*returns_spi_cons).replace(0, np.nan).mean(axis=1)
+    returns_small_conservative = (position_small_conservative*returns_spi_cons).replace(0, np.nan).mean(axis=1)
+
+    returns_big_aggressive = (position_big_aggressive*returns_spi_cons).replace(0, np.nan).mean(axis=1)
+    returns_big_conservative = (position_big_conservative*returns_spi_cons).replace(0, np.nan).mean(axis=1)
+
+    cma = 0.5*(returns_small_conservative + returns_big_conservative) - 0.5*(returns_small_aggressive + returns_big_aggressive)
+
+    return cma
+
+cma = CMA()
+
+"""VOL Factor"""
+def VOL():
+    position_small = factor_building(mktcap_spi_cons, quantile=0.5, long_above_quantile=False, ew_position=False).replace(0, np.nan)
+    position_small_high = factor_building((roll_vol_spi_cons*position_small), quantile=0.65, long_above_quantile=True, ew_position=False)
+    position_small_low = factor_building((roll_vol_spi_cons*position_small), quantile=0.35, long_above_quantile=False, ew_position=False)
+        
+    position_big = factor_building(mktcap_spi_cons, quantile=0.5, long_above_quantile=True, ew_position=False).replace(0, np.nan)
+    position_big_high = factor_building((roll_vol_spi_cons*position_big), quantile=0.65, long_above_quantile=True, ew_position=False)
+    position_big_low= factor_building((roll_vol_spi_cons*position_big), quantile=0.35, long_above_quantile=False, ew_position=False)
+    
+    returns_small_high= (position_small_high*returns_spi_cons).replace(0, np.nan).mean(axis=1)
+    returns_small_low= (position_small_low*returns_spi_cons).replace(0, np.nan).mean(axis=1)
+    
+    returns_big_high = (position_big_high*returns_spi_cons).replace(0, np.nan).mean(axis=1)
+    returns_big_low= (position_big_low*returns_spi_cons).replace(0, np.nan).mean(axis=1)
+    
+    vol = 0.5*(returns_small_low + returns_big_low) - 0.5*(returns_small_high + returns_big_high)
+    
+    return vol
+
+vol = VOL()
+
+"""Fama-French 3 Factor Model Analysis"""
+ff3_merged = pd.DataFrame({'Rm-Rf': excess_return_market, 'SMB': smb, 'HML': hml}).dropna()
+ff3_merged_constant = sm.add_constant(ff3_merged['2001-01-01':])
+
+ff3_index_low = ff3_merged_constant.iloc[0].name
+ff3_index_high = ff3_merged_constant.iloc[-1].name
+
+## FF Regression for ERC factor
+erc_excess_returns = erc_returns - libor1M_CHF['1M Libor CHF']/100
+ff3_reg_erc = sm.OLS(erc_excess_returns[ff3_index_low:ff3_index_high], ff3_merged_constant).fit()
+
+ff3_reg_erc.summary()
+
+## FF Regression for Ridge Regression
+ridge_excess_returns = ridge_returns - libor1M_CHF['1M Libor CHF']/100
+ff3_reg_ridge = sm.OLS(ridge_excess_returns[ff3_index_low:ff3_index_high], ff3_merged_constant).fit()
+
+ff3_reg_ridge.summary()
+
+## FF Regression for Parametrics
+parametric_excess_returns = parametric_returns - libor1M_CHF['1M Libor CHF']/100
+ff3_reg_parametrics = sm.OLS(parametric_excess_returns[ff3_index_low:ff3_index_high], ff3_merged_constant).fit()
+
+ff3_reg_parametrics.summary()
+
+## Merge Results
+df_ff3_results = pd.DataFrame({'Coefficient ERC': ff3_reg_erc.params, 'T-Test ERC': ff3_reg_erc.tvalues,
+                       'Coefficient Ridge': ff3_reg_ridge.params, 'P-Test Ridge': ff3_reg_ridge.tvalues,
+                       'Coefficient Parametrics': ff3_reg_parametrics.params, 'P-VTest Parametrics': ff3_reg_parametrics.tvalues}).T
+
+df_ff3_r2 = pd.DataFrame({'R2': [ff3_reg_erc.rsquared, np.nan, ff3_reg_ridge.rsquared, np.nan, ff3_reg_parametrics.rsquared, np.nan]}, index=df_ff3_results.index)
+
+df_ff3_merged = pd.concat([df_ff3_results, df_ff3_r2], axis=1)
+
+df_ff3_results.rename(columns={'const': 'Intercept'}, inplace=True)
+
+"""Fama-French Multiple Factor Model Analysis"""
+ff_merged = pd.DataFrame({'Rm-Rf': excess_return_market, 'SMB': smb, 'HML': hml, 'WML': wml, 'RMW': rmw, 'CMA': cma, 'VOL': vol}).dropna()
+ff_merged_constant = sm.add_constant(ff_merged['2001-01-01':])
+
+ff_index_low = ff_merged_constant.iloc[0].name
+ff_index_high = ff_merged_constant.iloc[-1].name
+
+## FF Regression for ERC factor
+erc_excess_returns = erc_returns - libor1M_CHF['1M Libor CHF']/100
+ff_reg_erc = sm.OLS(erc_excess_returns[ff_index_low:ff_index_high], ff_merged_constant).fit()
+
+ff_reg_erc.summary()
+
+## FF Regression for Ridge Regression
+ridge_excess_returns = ridge_returns - libor1M_CHF['1M Libor CHF']/100
+ff_reg_ridge = sm.OLS(ridge_excess_returns[ff_index_low:ff_index_high], ff_merged_constant).fit()
+
+ff_reg_erc.summary()
+
+## FF Regression for Parametrics
+parametric_excess_returns = parametric_returns - libor1M_CHF['1M Libor CHF']/100
+ff_reg_parametrics = sm.OLS(parametric_excess_returns[ff_index_low:ff_index_high], ff_merged_constant).fit()
+
+ff_reg_parametrics.summary()
+
+## Merge Results
+df_ff_results = pd.DataFrame({'Coefficient ERC': ff_reg_erc.params, 'T-Test ERC': ff_reg_erc.tvalues,
+                       'Coefficient Ridge': ff_reg_ridge.params, 'P-Test Ridge': ff_reg_ridge.tvalues,
+                       'Coefficient Parametrics': ff_reg_parametrics.params, 'P-VTest Parametrics': ff_reg_parametrics.tvalues}).T
+
+df_ff_r2 = pd.DataFrame({'R2': [ff_reg_erc.rsquared, np.nan, ff_reg_ridge.rsquared, np.nan, ff_reg_parametrics.rsquared, np.nan]}, index=df_ff_results.index)
+
+df_ff_merged = pd.concat([df_ff_results, df_ff_r2], axis=1)
+
+df_ff_results.rename(columns={'const': 'Intercept'}, inplace=True)
+
+# =============================================================================
 # Merge Performance Dash
 # =============================================================================
 
-perf_merged = pd.concat([perf_erc, perf_ridge, perf_parametric, perf_cwbenchmark ], axis=1)
+perf_merged = pd.concat([perf_erc, perf_ridge, perf_parametric, perf_cwbenchmark], axis=1)
 
 df_dash = pd.DataFrame({'ERC': cum_prod(erc_returns[start_ptf:]), 'Ridge': cum_prod(ridge_returns[start_ptf:]), 
                         'Parametrics': cum_prod(parametric_returns[start_ptf:]), 'CW Benchmark': cum_prod(cw_spi_index[start_ptf:])}).dropna()

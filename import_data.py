@@ -64,6 +64,18 @@ def get_spi():
     """COLLECTING VOLUME TRADED"""
     trade_spi = import_spi('Volume Trade').T
     
-    return (price_spi, pe_spi, dividend_spi, mktcap_spi, beta_spi, vol_spi, roe_spi, roa_spi, gm_spi, eps_spi, trade_spi)
+    """COLLECTING THE INDUSTRY TYPE"""
+    industry_spi = import_spi('Industry')
+    
+    """COLLECTING MARKET-TO-BOOK RATIO"""
+    mb_spi = import_spi('MB').T
+
+    """COLLECTING OPERATING PROFIT MARGIN"""
+    investment_spi = import_spi('Other Investment').T
+
+    """COLLECTING OPERATING PROFIT MARGIN"""
+    profit_spi = import_spi('Operating Profit Margin').T
+    
+    return (price_spi, pe_spi, dividend_spi, mktcap_spi, beta_spi, vol_spi, roe_spi, roa_spi, gm_spi, eps_spi, trade_spi, industry_spi, mb_spi, investment_spi, profit_spi)
 
 

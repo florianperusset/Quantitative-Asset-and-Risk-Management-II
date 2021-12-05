@@ -150,6 +150,26 @@ def TE_expost(return_ptf, return_benchmark):
     expost_TE = active_return.dropna().std()*np.sqrt(12)
     return expost_TE
 
+def info_ratio(return_p, return_b):
+    """
+    This function determine the information ratio of an investment.
+
+    Parameters
+    ----------
+    return_p : TYPE
+        Returns of the actual portfolio.
+    return_b : TYPE
+        Returns of the benchmark.
+
+    Returns
+    -------
+    TYPE
+        It returns the annualized info. ratio.
+
+    """
+    excess = return_p - return_b
+    return (excess.mean(axis=0)*12)/(excess.std(axis=0)*(12**0.5))
+
 def perf(returns_ptf, returns_benchmark, name):
     """
     This function compute all the required performances of a time series.
