@@ -1,6 +1,6 @@
 import numpy as np
 
-def factor_building(metric, quantile=0.5, long_above_quantile=True, ew_position=True):
+def factor_building(metric, quantile, long_above_quantile=True, ew_position=True):
     """
     Builds a factor, that is, determines the weights in each security within the factor
     
