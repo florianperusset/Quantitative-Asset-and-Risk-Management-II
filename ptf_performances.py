@@ -1,3 +1,21 @@
+"""
+-----------------------------------------------------------------------
+QUANTITATIVE ASSET & RISK MANAGEMENT II
+
+HEC LAUSANNE - AUTUMN 2021
+
+Title: Style Rotation on Swiss Long-Only Equity Factors
+
+Authors: Sebastien Gorgoni, Florian Perusset, Florian Vogt
+
+File Name: ptf_performances.py
+-----------------------------------------------------------------------
+
+This is an external file for main.py which compute all necessary performances metrics to analyse
+the performances of our portfolios. 
+
+"""
+
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
@@ -173,25 +191,22 @@ def info_ratio(return_p, return_b):
 def perf(returns_ptf, returns_benchmark, name):
     """
     This function compute all the required performances of a time series.
-    It also plot the monthly returns, the evolution of the mayx drawdown and 
-    the cumulative return of the portfolio vs. benchmark
+    It also plot the cumulative return of the portfolio vs. benchmark
 
     Parameters
     ----------
-    data : TYPE
+    returns_ptf : DataFrame
         Returns of a given portfolio.
-    benchmark : TYPE
+    returns_benchmark : DataFrame
         Returns of the benchmark.
-    name : TYPE
-        Name of the dataframe.
-    name_plt : TYPE
+    name : String
         Name given to the plot.
 
     Returns
     -------
-    df : TYPE
+    df : DataFrame
         Return a dataframe that contains the annualized returns, volatility,
-        Sharpe ratio, max drawdown and hit ratio.
+        Sharpe ratio, max drawdown, hit ratio, ex post TE and info. ratio . 
 
     """
     plt.figure(figsize=(10,7))
@@ -199,14 +214,12 @@ def perf(returns_ptf, returns_benchmark, name):
     vol = np.std(returns_ptf,0)*np.power(12,0.5)
     sharpe = exp/vol
     max_dd = max_drawdown((returns_ptf+1).cumprod())
-    #plt.subplot(121)
-    #plt.plot(max_dd, 'g')
     plt.title("Evolution of Max Drawdown", fontsize=15)
     hit = hit_ratio(returns_ptf)
     expost_TE = TE_expost(returns_ptf, returns_benchmark)
+    #ir = info_ratio(returns_ptf, returns_benchmark)
     df = pd.DataFrame({name: [exp, vol, sharpe, max_dd.min(), hit, expost_TE]}, 
                       index = ['Annualized Return', 'Annualized STD', 'Sharpe Ratio', 'Max Drawdown', 'Hit Ratio', 'TE Ex-Post'])
-    #plt.subplot(122)
     plt.plot(cum_prod(returns_ptf), 'b', label=name)
     plt.plot(cum_prod(returns_benchmark), 'r', label='CW Benchmark')
     plt.legend(loc='upper left', frameon=True)

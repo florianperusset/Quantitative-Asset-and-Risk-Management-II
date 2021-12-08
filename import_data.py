@@ -1,3 +1,21 @@
+"""
+-----------------------------------------------------------------------
+QUANTITATIVE ASSET & RISK MANAGEMENT II
+
+HEC LAUSANNE - AUTUMN 2021
+
+Title: Style Rotation on Swiss Long-Only Equity Factors
+
+Authors: Sebastien Gorgoni, Florian Perusset, Florian Vogt
+
+File Name: import_data.py
+-----------------------------------------------------------------------
+
+This is an external file for main.py which import the data from the excel file SPI_DATA_ALL.xlsx and
+process it to create a usable dataframe. 
+
+"""
+
 import os
 import pandas as pd
 import numpy as np
@@ -5,6 +23,21 @@ import re
 
 
 def import_spi(sheet):
+    """
+    This function import the data from the excel file SPI_DATA_ALL.xlsx
+    and process it to create a usable dataframe.
+
+    Parameters
+    ----------
+    sheet : String
+        The name of the sheet wanted in the excel file.
+
+    Returns
+    -------
+    df : DataFrame
+        The dataframe of the wanted excel sheet, ready to use.
+
+    """
     
     os.chdir("/Users/sebastiengorgoni/Documents/HEC Master/Semester 5.1/Quantitative Asset & Risk Management 2/Project")
     
@@ -30,6 +63,44 @@ def import_spi(sheet):
     return df
 
 def get_spi():
+    """
+    This function will call the function import_spi() to process all
+    sheets included in the excel file. 
+
+    Returns
+    -------
+    price_spi : TYPE
+        DESCRIPTION.
+    pe_spi : TYPE
+        DESCRIPTION.
+    dividend_spi : TYPE
+        DESCRIPTION.
+    mktcap_spi : TYPE
+        DESCRIPTION.
+    beta_spi : TYPE
+        DESCRIPTION.
+    vol_spi : TYPE
+        DESCRIPTION.
+    roe_spi : TYPE
+        DESCRIPTION.
+    roa_spi : TYPE
+        DESCRIPTION.
+    gm_spi : TYPE
+        DESCRIPTION.
+    eps_spi : TYPE
+        DESCRIPTION.
+    trade_spi : TYPE
+        DESCRIPTION.
+    industry_spi : TYPE
+        DESCRIPTION.
+    mb_spi : TYPE
+        DESCRIPTION.
+    investment_spi : TYPE
+        DESCRIPTION.
+    profit_spi : TYPE
+        DESCRIPTION.
+
+    """
     
     """COLLECTING PRICES"""
     price_spi = import_spi('Price').T
