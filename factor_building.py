@@ -37,10 +37,6 @@ def factor_building(metric, quantile, long_above_quantile=True, ew_position=True
         the DataFrame with the weights in each security in the factor.
     """
     
-    if not long_above_quantile:
-        
-        quantile = 1 - quantile
-    
     quantile_factor = metric.quantile(q=quantile, axis=1)
     position_factor = metric.copy()
     
