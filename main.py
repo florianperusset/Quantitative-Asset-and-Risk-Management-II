@@ -265,7 +265,7 @@ def run_factor_building(quantile):
     plt.title("Momentum")
     
     """VALUE"""
-    position_value = factor_building(pe_spi_cons, 1-quantile, long_above_quantile=False)
+    position_value = factor_building(1/pe_spi_cons, quantile)
     returns_value = position_value.mul(returns_spi_cons).sum(axis=1)
     
     plt.figure()
@@ -876,7 +876,7 @@ def run_ff_regression(returns_ptf, returns_ff, interest_rate, name):
     return df_ff_merged
 
 """Fama-French 3 Factor Model Analysis"""
-ff3_merged = pd.DataFrame({'Rm-Rf': excess_return_market, 'SMB': smb, 'HML': hml}).dropna()
+ff3_merged = pd.DataFrame({'MktRf': excess_return_market, 'SMB': smb, 'HML': hml}).dropna()
 ff3_merged_constant = sm.add_constant(ff3_merged[start_ptf:])
 
 ## No TE Monitor
@@ -900,7 +900,7 @@ ff3_analysis_combineCW   = pd.concat([ff3_mom_factor_noTE, ff3_erc_noTE, ff3_rid
 # =============================================================================
 
 """Fama-French Multiple Factor Model Analysis"""
-ff_merged = pd.DataFrame({'Rm-Rf': excess_return_market, 'SMB': smb, 'HML': hml, 'WML': wml, 'RMW': rmw, 'CMA': cma, 'VOL': vol}).dropna()
+ff_merged = pd.DataFrame({'MktRf': excess_return_market, 'SMB': smb, 'HML': hml, 'WML': wml, 'RMW': rmw, 'CMA': cma, 'VOL': vol}).dropna()
 ff_merged_constant = sm.add_constant(ff_merged[start_ptf:])
 
 ## No TE Monitor
