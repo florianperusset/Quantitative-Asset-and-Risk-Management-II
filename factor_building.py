@@ -17,6 +17,8 @@ of factors
 """
 
 import numpy as np
+import pandas as pd
+import statsmodels.api as sm
 
 def factor_building(metric, quantile, long_above_quantile=True, ew_position=True):
     """
@@ -53,3 +55,24 @@ def factor_building(metric, quantile, long_above_quantile=True, ew_position=True
         position_factor = position_factor.div(position_factor.sum(axis=1), axis=0).replace(np.nan,0)
         
     return position_factor
+
+def run_ff_regression(returns_ptf, returns_ff, interest_rate):
+    
+    excess_returns = returns_ptf - interest_rate
+    
+    index_low = returns_ff.iloc[0].name
+    index_high = returns_ff.iloc[-1].name
+    
+    ff_reg = sm.OLS(excess_returns[index_low:index_high], returns_ff[index_low:index_high]).fit()
+    
+    ## Merge Results
+    df_ff_results = pd.DataFrame({'Coeff. ': ff_reg.params, 'Pval ': ff_reg.pvalues}).T
+
+    df_ff_results.rename(columns={'const': 'Intercept'}, inplace=True)
+
+    df_ff_r2 = pd.DataFrame({'R2': [ff_reg.rsquared, np.nan]}, index = df_ff_results.index)
+    
+    df_ff_merged = pd.concat([df_ff_results, df_ff_r2], axis=1)
+    
+    return df_ff_merged.round(3)
+

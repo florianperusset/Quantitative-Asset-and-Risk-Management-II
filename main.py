@@ -64,21 +64,63 @@ import statsmodels.api as sm
 import matplotlib.pyplot as plt
 import seaborn as sns
 from fredapi import Fred
-
 sns.set_theme(style="darkgrid")
 
 os.chdir("/Users/sebastiengorgoni/Documents/HEC Master/Semester 5.1/Quantitative Asset & Risk Management 2/Project")
 
 from import_data import get_spi
 from optimization_criteria import criterion_erc, criterion_ridge
-from ptf_performances import cum_prod, perf, risk_historical, TE_exante, TE_expost
-from factor_building import factor_building
+from ptf_performances import cum_prod, perf, risk_historical, TE_exante
+from factor_building import factor_building, run_ff_regression
 
 # Alpha Vantage Key: O6PSHZOQS29QHD3E
 # FRED Key: 2fd4cf1862f877db032b4a6a3a5f1c77
 
 ## Start the Creation of the portfolio
 start_ptf = '2009-01-01'
+
+# Create files in the working directory
+if not os.path.isdir('Plot'):
+    os.makedirs('Plot')
+    
+if not os.path.isdir('Plot/Basis'):
+    os.makedirs('Plot/Basis')
+    
+if not os.path.isdir('Plot/Weights'):
+    os.makedirs('Plot/Weights')
+    
+if not os.path.isdir('Plot/Sensitivity'):
+    os.makedirs('Plot/Sensitivity')
+
+if not os.path.isdir('Plot/Sensitivity/Liquidity'):
+    os.makedirs('Plot/Sensitivity/Liquidity')
+    
+if not os.path.isdir('Plot/Sensitivity/FactorQuantile'):
+    os.makedirs('Plot/Sensitivity/FactorQuantile')
+
+if not os.path.isdir('Plot/Sensitivity/CW'):
+    os.makedirs('Plot/Sensitivity/CW')
+
+if not os.path.isdir('Output'):
+    os.makedirs('Output')
+    
+if not os.path.isdir('Output/Basis'):
+    os.makedirs('Output/Basis')
+    
+if not os.path.isdir('Output/FF'):
+    os.makedirs('Output/FF')
+
+if not os.path.isdir('Output/Sensitivity'):
+    os.makedirs('Output/Sensitivity')
+
+if not os.path.isdir('Output/Sensitivity/Liquidity'):
+    os.makedirs('Output/Sensitivity/Liquidity')
+    
+if not os.path.isdir('Output/Sensitivity/FactorQuantile'):
+    os.makedirs('Output/Sensitivity/FactorQuantile')
+
+if not os.path.isdir('Output/Sensitivity/CW'):
+    os.makedirs('Output/Sensitivity/CW')
 
 # =============================================================================
 # =============================================================================
@@ -95,6 +137,7 @@ spi = get_spi()
 """Swiss Performance Index"""
 #Price Constituents
 price_spi_cons = spi[0] 
+price_spi_cons.index = pd.to_datetime(price_spi_cons.index)
 index =  price_spi_cons.index
 
 #Compute the returns
@@ -189,6 +232,8 @@ libor1M_CHF = libor1M_CHF[(libor1M_CHF.index >= '1999-12-01') & (libor1M_CHF.ind
 libor1M_CHF = libor1M_CHF.groupby(pd.Grouper(freq="M")).mean() 
 libor1M_CHF.index = index
 
+risk_free = (libor1M_CHF['1M Libor CHF'][start_ptf:]/100).mean()
+
 # Merge all macro data
 macro_data_df = pd.DataFrame({'10y Bond Yield US': gov_bond_US, 'VIX': vix,
                               'CPI US': cpi_US, 'TED Spread': TEDspread_US}).dropna()
@@ -206,11 +251,20 @@ macro_data = macro_data.shift(3)
 
 """Cap-Weighted Benchmark"""
 cw_spi_cons = mktcap_spi_cons.divide(mktcap_spi_cons.sum(axis=1), axis='index')
-
-cw_spi_index = (cw_spi_cons*returns_spi_cons).sum(axis=1)
 cw_spi_cons.index = pd.to_datetime(cw_spi_cons.index)
 
-perf_cwbenchmark = perf(cw_spi_index[start_ptf:], cw_spi_index[start_ptf:], 'CW Benchmark')
+cw_spi_index = (cw_spi_cons*returns_spi_cons).sum(axis=1)
+
+plt.figure(figsize=(10,7))
+plt.plot(cum_prod(cw_spi_index[start_ptf:]), 'r', label='CW Benchmark')
+plt.legend(loc='upper left', frameon=True)
+plt.savefig('Plot/Basis/cw_basis.png', dpi=400)
+plt.show()
+plt.close()
+
+perf_cwbenchmark = perf(cw_spi_index[start_ptf:], cw_spi_index[start_ptf:], risk_free, 'CW')
+perf_cwbenchmark.to_latex('Output/Basis/perf_cwbenchmark_basis.tex', column_format = 'lc', multicolumn_format='c')
+
 
 # =============================================================================
 # =============================================================================
@@ -324,13 +378,13 @@ def run_factor_building(quantile):
     returns_factors = pd.DataFrame({"Momentum":returns_mom, "Value":returns_value,
                                    "Size":returns_size, "Profitability":returns_profit,
                                    "Beta":returns_beta, "Volatility":returns_vol,
-                                   "Dividend": returns_div, 'EPS (Earnings Quality)': returns_eps}).dropna()['2001-01-01':]
+                                   "Dividend": returns_div, 'EPS': returns_eps}).dropna()['2001-01-01':]
     
     # Create a dictionary of factor weight
     position_factors = {"Momentum": position_mom, "Value": position_value,
                                    "Size": position_size, "Profitability": position_profit,
                                    "Beta": position_beta, "Volatility": position_vol,
-                                   "Dividend": position_div, 'EPS (Earnings Quality)': position_eps}
+                                   "Dividend": position_div, 'EPS': position_eps}
     
     return (returns_factors, position_factors)
 
@@ -358,17 +412,11 @@ def run_momentum_factors(returns_factors, position_factors, quantile, combine_CW
         returns_mom_factors = returns_mom_factors*combine_CW_weight + cw_spi_index*(1-combine_CW_weight)
     
     ## Performances ERC model
-    perf_mom_factors = perf(returns_mom_factors[start_ptf:], cw_spi_index[start_ptf:], 'Momentum of Factor Returns ' + name)
-    risk_mom_factors = risk_historical(returns_mom_factors[start_ptf:], 0.95, 12)
-    risk_mom_factors.plot(figsize=(7,5))
+    perf_mom_factors = perf(returns_mom_factors[start_ptf:], cw_spi_index[start_ptf:], risk_free, name)
+    # risk_mom_factors = risk_historical(returns_mom_factors[start_ptf:], 0.95, 12)
+    # risk_mom_factors.plot(figsize=(7,5))
     
     weights_mom_factor = position_mom_factor.copy()
-    
-    ## Evolution of Factor Weigths
-    plt.figure(figsize=(20, 10))
-    weights_mom_factor[start_ptf:].plot()
-    plt.title("Weights Evolution for Momentum of Factor")
-    plt.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
     
     # Create a DF of the total weights of each SPI constituents
     weights_spi_cons_mom_factor = (position_factors['Momentum'].mul(weights_mom_factor['Momentum'], axis=0) 
@@ -378,17 +426,39 @@ def run_momentum_factors(returns_factors, position_factors, quantile, combine_CW
                                     + position_factors['Beta'].mul(weights_mom_factor['Beta'], axis=0)
                                     + position_factors['Volatility'].mul(weights_mom_factor['Volatility'], axis=0)
                                     + position_factors['Dividend'].mul(weights_mom_factor['Dividend'], axis=0)
-                                    + position_factors['EPS (Earnings Quality)'].mul(weights_mom_factor['EPS (Earnings Quality)'], axis=0)).dropna()[start_ptf:]
+                                    + position_factors['EPS'].mul(weights_mom_factor['EPS'], axis=0)).dropna()[start_ptf:]
 
-    return (weights_mom_factor, returns_mom_factors, perf_mom_factors, risk_mom_factors, weights_spi_cons_mom_factor)
+    return (weights_mom_factor, returns_mom_factors, perf_mom_factors, weights_spi_cons_mom_factor)
 
 """No TE Monitor"""
-run_mom_factors_noTE = run_momentum_factors(returns_factors, position_factors, quantile = 0.5, combine_CW_weight = 0, combine_CW = False, name = '(No TE Monitor)')
+run_mom_factors_noTE = run_momentum_factors(returns_factors, position_factors, quantile = 0.5, 
+                                            combine_CW_weight = 0, combine_CW = False, name = 'MF (No TE)')
 return_mom_factors_noTE = run_mom_factors_noTE[1]
 
+## Evolution of Weigths
+run_mom_factors_noTE[0].plot(figsize=(10, 7))
+plt.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
+plt.savefig('Plot/Weights/weights_momfactor_noTE_basis.png', dpi=400, bbox_inches='tight')
+
 """TE Monitor by Combining it with the CW Benchmark"""
-run_mom_factors_combineCW = run_momentum_factors(returns_factors, position_factors, quantile = 0.5, combine_CW_weight = 0.8, combine_CW = True, name = "(80% Portfolio, 20% CW Benchmark)")
+run_mom_factors_combineCW = run_momentum_factors(returns_factors, position_factors, quantile = 0.5, 
+                                                 combine_CW_weight = 0.8, combine_CW = True, name = "80% MF, 20% CW")
 return_mom_factors_combineCW = run_mom_factors_combineCW[1]
+
+## Evolution of Weigths
+run_mom_factors_combineCW[0].plot(figsize=(10, 7))
+plt.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
+plt.savefig('Plot/Weights/weights_momfactor_combineCW_basis.png', dpi=400, bbox_inches='tight')
+
+"""Merge Results"""
+return_mom_factors = pd.DataFrame({'CW Benchmark': cw_spi_index})
+return_mom_factors['MF (No TE)'] = run_mom_factors_noTE[1]
+return_mom_factors['80% MF - 20% CW'] = run_mom_factors_combineCW[1]
+return_mom_factors[start_ptf:].apply(cum_prod).plot(figsize=(10,7), colormap = 'Set1')
+plt.savefig('Plot/Basis/mom_factor_basis.png', dpi=400)
+
+perf_mom_factors = pd.concat([perf_cwbenchmark, run_mom_factors_noTE[2], run_mom_factors_combineCW[2]], axis=1)
+perf_mom_factors.to_latex('Output/Basis/mom_factor_basis.tex', column_format = 'lccc', multicolumn_format='c')
 
 # =============================================================================
 # 5.2) Strategy 2: ERC of Factors
@@ -417,7 +487,7 @@ def build_erc(returns_factors, position_factors, TE_target, check_TE=True):
                                                                                   + position_factors['Beta'].iloc[row-1].values * x[4]
                                                                                   + position_factors['Volatility'].iloc[row-1].values * x[5]
                                                                                   + position_factors['Dividend'].iloc[row-1].values * x[6]
-                                                                                  + position_factors['EPS (Earnings Quality)'].iloc[row-1].values * x[7]), cw_spi_cons.iloc[row-1].replace(np.nan,0).values, returns_spi_cons.iloc[:row-1])})
+                                                                                  + position_factors['EPS'].iloc[row-1].values * x[7]), cw_spi_cons.iloc[row-1].replace(np.nan,0).values, returns_spi_cons.iloc[:row-1])})
         
         else:
             
@@ -441,16 +511,10 @@ def run_erc(returns_factors, position_factors, TE_target, TE_check, combine_CW_w
         erc_returns = erc_returns*combine_CW_weight + cw_spi_index*(1-combine_CW_weight)
     
     ## Performances ERC model
-    perf_erc = perf(erc_returns[start_ptf:], cw_spi_index[start_ptf:], 'ERC Returns ' + name)
-    risk_erc = risk_historical(erc_returns[start_ptf:], 0.95, 12)
-    risk_erc.plot(figsize=(7,5))
-    
-    ## Evolution of Factor Weigths
-    plt.figure(figsize=(20, 10))
-    weights_factors_erc[start_ptf:].plot()
-    plt.title("Weights Evolution for ERC")
-    plt.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
-    
+    perf_erc = perf(erc_returns[start_ptf:], cw_spi_index[start_ptf:], risk_free, name)
+    # risk_erc = risk_historical(erc_returns[start_ptf:], 0.95, 12)
+    # risk_erc.plot(figsize=(7,5))
+      
     # Create a DF of the total weights of each SPI constituents
     weights_spi_cons_erc = (position_factors['Momentum'].mul(weights_factors_erc['Momentum'], axis=0) 
                                     + position_factors['Value'].mul(weights_factors_erc['Value'], axis=0)
@@ -459,21 +523,56 @@ def run_erc(returns_factors, position_factors, TE_target, TE_check, combine_CW_w
                                     + position_factors['Beta'].mul(weights_factors_erc['Beta'], axis=0)
                                     + position_factors['Volatility'].mul(weights_factors_erc['Volatility'], axis=0)
                                     + position_factors['Dividend'].mul(weights_factors_erc['Dividend'], axis=0)
-                                    + position_factors['EPS (Earnings Quality)'].mul(weights_factors_erc['EPS (Earnings Quality)'], axis=0)).dropna()[start_ptf:]
+                                    + position_factors['EPS'].mul(weights_factors_erc['EPS'], axis=0)).dropna()[start_ptf:]
     
-    return (weights_factors_erc, erc_returns, perf_erc, risk_erc, weights_spi_cons_erc)
+    return (weights_factors_erc, erc_returns, perf_erc, weights_spi_cons_erc)
 
 """No TE Monitor"""
-run_erc_noTE = run_erc(returns_factors, position_factors, TE_target = 0, TE_check = False, combine_CW_weight = 0, combine_CW = False, name = "(No TE Monitor)")
+run_erc_noTE = run_erc(returns_factors, position_factors, TE_target = 0, 
+                       TE_check = False, combine_CW_weight = 0, combine_CW = False, 
+                       name = "ERC (No TE)")
 return_erc_noTE = run_erc_noTE[1]
 
+## Evolution of Weigths
+run_erc_noTE[0][start_ptf:].plot(figsize=(10, 7))
+plt.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
+plt.savefig('Plot/Weights/weights_erc_noTE_basis.png', dpi=400, bbox_inches='tight')
+
 """TE Monitor in Optimization"""
-run_erc_checkTE = run_erc(returns_factors, position_factors, TE_target = 0.06, TE_check = True, combine_CW_weight = 0, combine_CW = False, name = "(6% TE Target)")
+run_erc_checkTE = run_erc(returns_factors, position_factors, TE_target = 0.06, 
+                          TE_check = True, combine_CW_weight = 0, combine_CW = False, 
+                          name = " ERC (6% TE Target)")
 returns_erc_checkTE = run_erc_checkTE[1]
 
+## Evolution of Weigths
+run_erc_checkTE[0][start_ptf:].plot(figsize=(10, 7))
+plt.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
+plt.savefig('Plot/Weights/weights_erc_checkTE_basis.png', dpi=400, bbox_inches='tight')
+
 """TE Monitor by Combining it with the CW Benchmark"""
-run_erc_combineCW = run_erc(returns_factors, position_factors, TE_target = 0, TE_check = False, combine_CW_weight = 0.80, combine_CW = True, name = "(80% Portfolio, 20% CW Benchmark)")
+run_erc_combineCW = run_erc(returns_factors, position_factors, TE_target = 0, 
+                            TE_check = False, combine_CW_weight = 0.80, combine_CW = True, 
+                            name = "80% ERC, 20% CW")
 return_erc_combineCW = run_erc_combineCW[1]
+
+## Evolution of Weigths
+run_erc_combineCW[0][start_ptf:].plot(figsize=(10, 7))
+plt.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
+plt.savefig('Plot/Weights/weights_erc_combineCW_basis.png', dpi=400, bbox_inches='tight')
+
+"""Merge Results"""
+return_erc = pd.DataFrame({'CW Benchmark': cw_spi_index})
+return_erc['ERC (No TE)'] = run_erc_noTE[1]
+return_erc['ERC (6% TE Target)'] = run_erc_checkTE[1]
+return_erc['80% ERC - 20% CW'] = run_erc_combineCW[1]
+
+return_erc[start_ptf:].apply(cum_prod).plot(figsize=(10,7), colormap = 'Set1')
+plt.savefig('Plot/Basis/erc_basis.png', dpi=400)
+
+perf_erc_basis = pd.concat([perf_cwbenchmark, run_erc_noTE[2], 
+                       run_erc_checkTE[2], run_erc_combineCW[2]], axis=1)
+perf_erc_basis.to_latex('Output/Basis/perf_erc_basis.tex', column_format = 'lcccc', multicolumn_format='c')
+
 
 # =============================================================================
 # 5.3) Strategy 3: Ridge Regression of Factors
@@ -501,7 +600,7 @@ def build_ridge(returns_factors, position_factors, TE_target, check_TE=True):
                                                                                   + position_factors['Beta'].iloc[row-1].values * x[4]
                                                                                   + position_factors['Volatility'].iloc[row-1].values * x[5]
                                                                                   + position_factors['Dividend'].iloc[row-1].values * x[6]
-                                                                                  + position_factors['EPS (Earnings Quality)'].iloc[row-1].values * x[7]), cw_spi_cons.iloc[row-1].replace(np.nan,0).values, returns_spi_cons.iloc[:row-1])})
+                                                                                  + position_factors['EPS'].iloc[row-1].values * x[7]), cw_spi_cons.iloc[row-1].replace(np.nan,0).values, returns_spi_cons.iloc[:row-1])})
         
         else:
             
@@ -512,7 +611,7 @@ def build_ridge(returns_factors, position_factors, TE_target, check_TE=True):
         
     return ridge_weights_factors
 
-def run_rigde(returns_factors, position_factors, TE_target, TE_check, combine_CW_weight, combine_CW, name):
+def run_ridge(returns_factors, position_factors, TE_target, TE_check, combine_CW_weight, combine_CW, name):
 
     ridge_weights_factors = build_ridge(returns_factors, position_factors, TE_target, TE_check)
     
@@ -524,16 +623,10 @@ def run_rigde(returns_factors, position_factors, TE_target, TE_check, combine_CW
         ridge_returns = ridge_returns*combine_CW_weight + cw_spi_index*(1-combine_CW_weight)
     
     ## Performances Ridge Regression
-    perf_ridge = perf(ridge_returns[start_ptf:], cw_spi_index[start_ptf:], 'Ridge Returns ' + name)
-    risk_ridge = risk_historical(ridge_returns[start_ptf:], 0.95, 12)
-    risk_ridge.plot(figsize=(7,5))
-    
-    ## Evolution of Weigths
-    plt.figure(figsize=(20, 10))
-    ridge_weights_factors[start_ptf:].plot()
-    plt.title("Weights Evolution for Ridge Regression")
-    plt.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
-    
+    perf_ridge = perf(ridge_returns[start_ptf:], cw_spi_index[start_ptf:], risk_free, name)
+    # risk_ridge = risk_historical(ridge_returns[start_ptf:], 0.95, 12)
+    # risk_ridge.plot(figsize=(7,5))
+            
     ## Create a DF of the total weights of each SPI constituents
     weights_spi_cons_ridge = (position_factors['Momentum'].mul(ridge_weights_factors['Momentum'], axis=0) 
                                     + position_factors['Value'].mul(ridge_weights_factors['Value'], axis=0)
@@ -542,28 +635,61 @@ def run_rigde(returns_factors, position_factors, TE_target, TE_check, combine_CW
                                     + position_factors['Beta'].mul(ridge_weights_factors['Beta'], axis=0)
                                     + position_factors['Volatility'].mul(ridge_weights_factors['Volatility'], axis=0)
                                     + position_factors['Dividend'].mul(ridge_weights_factors['Dividend'], axis=0)
-                                    + position_factors['EPS (Earnings Quality)'].mul(ridge_weights_factors['EPS (Earnings Quality)'], axis=0)).dropna()[start_ptf:]
+                                    + position_factors['EPS'].mul(ridge_weights_factors['EPS'], axis=0)).dropna()[start_ptf:]
 
-    return (ridge_weights_factors, ridge_returns, perf_ridge, risk_ridge, weights_spi_cons_ridge)
+    return (ridge_weights_factors, ridge_returns, perf_ridge, weights_spi_cons_ridge)
 
 """No TE Monitor"""
-run_ridge_noTE = run_rigde(returns_factors, position_factors, TE_target = 0, TE_check = False, combine_CW_weight = 0, combine_CW = False, name = "(No TE Monitor)")
+run_ridge_noTE = run_ridge(returns_factors, position_factors, TE_target = 0, 
+                           TE_check = False, combine_CW_weight = 0, combine_CW = False, 
+                           name = "Ridge (No TE)")
 return_ridge_noTE = run_ridge_noTE[1]
 
+## Evolution of Weigths
+run_ridge_noTE[0][start_ptf:].plot(figsize=(10, 7))
+plt.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
+plt.savefig('Plot/Weights/weights_ridge_noTE_basis.png', dpi=400, bbox_inches='tight')
+
 """TE Monitor in Optimization"""
-run_ridge_checkTE = run_rigde(returns_factors, position_factors, TE_target = 0.06, TE_check = True, combine_CW_weight = 0, combine_CW = False, name = "(6% TE Target)")
+run_ridge_checkTE = run_ridge(returns_factors, position_factors, TE_target = 0.06, 
+                              TE_check = True, combine_CW_weight = 0, combine_CW = False, 
+                              name = "Ridge (6% TE Target)")
 returns_ridge_checkTE = run_ridge_checkTE[1]
 
+## Evolution of Weigths
+run_ridge_checkTE[0][start_ptf:].plot(figsize=(10, 7))
+plt.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
+plt.savefig('Plot/Weights/weights_ridge_checkTE_basis.png', dpi=400, bbox_inches='tight')
+
 """TE Monitor by Combining it with the CW Benchmark"""
-run_ridge_combineCW = run_rigde(returns_factors, position_factors, TE_target = 0, TE_check = False, combine_CW_weight = 0.80, combine_CW = True, name = "(80% Portfolio, 20% CW Benchmark)")
+run_ridge_combineCW = run_ridge(returns_factors, position_factors, TE_target = 0, 
+                                TE_check = False, combine_CW_weight = 0.80, combine_CW = True, 
+                                name = "80% Ridge, 20%")
 return_ridge_combineCW = run_ridge_combineCW[1]
+
+## Evolution of Weigths
+run_ridge_combineCW[0][start_ptf:].plot(figsize=(10, 7))
+plt.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
+plt.savefig('Plot/Weights/weights_ridge_combineCW_basis.png', dpi=400, bbox_inches='tight')
+
+"""Merge Results"""
+return_ridge = pd.DataFrame({'CW Benchmark': cw_spi_index})
+return_ridge['Ridge (No TE)'] = run_ridge_noTE[1]
+return_ridge['Ridge (6% TE Target)'] = run_ridge_checkTE[1]
+return_ridge['80% Ridge - 20% CW'] = run_ridge_combineCW[1]
+
+return_ridge[start_ptf:].apply(cum_prod).plot(figsize=(10,7), colormap = 'Set1')
+plt.savefig('Plot/Basis/ridge_basis.png', dpi=400)
+
+perf_ridge_basis = pd.concat([perf_cwbenchmark, run_ridge_noTE[2], 
+                       run_ridge_checkTE[2], run_ridge_combineCW[2]], axis=1)
+perf_ridge_basis.to_latex('Output/Basis/perf_ridge_basis.tex', column_format = 'lcccc', multicolumn_format='c')
 
 # =============================================================================
 # 5.4) Strategy 4: Parametrics using Macro Data (Factor Timing)
 # =============================================================================
 
 """PARAMETRIC WEIGHTS WITH ALL MACRO VARIABLES"""
-
 def build_parametrics(returns_factors, select_macro_data):
     
     returns_factors_parametric = returns_factors.iloc[:-1].copy()
@@ -571,7 +697,7 @@ def build_parametrics(returns_factors, select_macro_data):
          
     shape = returns_factors_parametric.shape[1]*macro_variables_parametric.shape[1]
     
-    risk_aversion = (perf_cwbenchmark.T['Sharpe Ratio']/perf_cwbenchmark.T['Annualized STD']).iloc[0]
+    risk_aversion = (perf_cwbenchmark.T['SR']/perf_cwbenchmark.T['Ann. STD (%)']).iloc[0]
     
     conditional_weights_factors = returns_factors_parametric.copy()
     for time in range(0, len(macro_variables_parametric)):
@@ -609,16 +735,10 @@ def run_parametrics(returns_factors, position_factors, select_macro_data, combin
         parametric_returns = parametric_returns*combine_CW_weight + cw_spi_index*(1 - combine_CW_weight)
     
     ## Performances Parametrics
-    perf_parametric = perf(parametric_returns[start_ptf:], cw_spi_index[start_ptf:], 'Parametric Returns ' + name)
-    risk_parametric = risk_historical(parametric_returns[start_ptf:], 0.95, 12)
-    risk_parametric.plot(figsize=(7,5))
-    
-    ## Evolution of Weigths
-    plt.figure(figsize=(20, 10))
-    conditional_weights_factors[start_ptf:].plot()
-    plt.title("Weights Evolution for Parametrics Weights")
-    plt.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
-    
+    perf_parametric = perf(parametric_returns[start_ptf:], cw_spi_index[start_ptf:], risk_free, name)
+    # risk_parametric = risk_historical(parametric_returns[start_ptf:], 0.95, 12)
+    # risk_parametric.plot(figsize=(7,5))
+        
     ## Create a DF of the total weights of each SPI constituents
     weights_spi_cons_parametrics = (position_factors['Momentum'].mul(conditional_weights_factors['Momentum'], axis=0) 
                                     + position_factors['Value'].mul(conditional_weights_factors['Value'], axis=0)
@@ -627,9 +747,9 @@ def run_parametrics(returns_factors, position_factors, select_macro_data, combin
                                     + position_factors['Beta'].mul(conditional_weights_factors['Beta'], axis=0)
                                     + position_factors['Volatility'].mul(conditional_weights_factors['Volatility'], axis=0)
                                     + position_factors['Dividend'].mul(conditional_weights_factors['Dividend'], axis=0)
-                                    + position_factors['EPS (Earnings Quality)'].mul(conditional_weights_factors['EPS (Earnings Quality)'], axis=0)).dropna()
+                                    + position_factors['EPS'].mul(conditional_weights_factors['EPS'], axis=0)).dropna()
     
-    return (conditional_weights_factors, parametric_returns, perf_parametric, risk_parametric, weights_spi_cons_parametrics)
+    return (conditional_weights_factors, parametric_returns, perf_parametric, weights_spi_cons_parametrics)
 
 macro_variable_list = macro_data.columns.tolist()
 
@@ -639,9 +759,22 @@ run_parametrics_noTE_dict = {'10y Bond Yield US': [], 'VIX': [], 'CPI US': [],
                              'All Macro Data': []}
 
 for i in macro_variable_list:
-    run_parametrics_noTE_dict[i] = run_parametrics(returns_factors, position_factors, select_macro_data = [i], combine_CW_weight = 0, combine_CW = False, name = f'({i}, No TE Monitor)')
+    run_parametrics_noTE_dict[i] = run_parametrics(returns_factors, position_factors, select_macro_data = [i], 
+                                                   combine_CW_weight = 0, combine_CW = False, 
+                                                   name = 'Parametrics (No TE)')
 
-run_parametrics_noTE_dict['All Macro Data'] = run_parametrics(returns_factors, position_factors, select_macro_data = macro_variable_list, combine_CW_weight = 0, combine_CW = False, name = "(All Macro Data, No TE Monitor)")
+run_parametrics_noTE_dict['All Macro Data'] = run_parametrics(returns_factors, position_factors, select_macro_data = macro_variable_list, 
+                                                              combine_CW_weight = 0, combine_CW = False, 
+                                                              name = "Parametrics (No TE)")
+
+## Evolution of Weigths
+run_parametrics_noTE_dict['All Macro Data'][0][start_ptf:].plot(figsize=(10, 7))
+plt.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
+plt.savefig('Plot/Weights/weights_parametrics_allmacro_noTE_basis.png', dpi=400, bbox_inches='tight')
+
+run_parametrics_noTE_dict['VIX'][0][start_ptf:].plot(figsize=(10, 7))
+plt.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
+plt.savefig('Plot/Weights/weights_parametrics_vix_noTE_basis.png', dpi=400, bbox_inches='tight')
 
 """TE Monitor by Combining it with the CW Benchmark"""
 run_parametrics_combineCW_dict = {'10y Bond Yield US': [], 'VIX': [], 'CPI US': [], 
@@ -649,9 +782,44 @@ run_parametrics_combineCW_dict = {'10y Bond Yield US': [], 'VIX': [], 'CPI US': 
                              'All Macro Data': []}
 
 for i in macro_variable_list:
-    run_parametrics_combineCW_dict[i] = run_parametrics(returns_factors, position_factors, select_macro_data = [i], combine_CW_weight = 0.8, combine_CW = True, name = f'({i}, 80% Portfolio, 20% CW Benchmark)')
+    run_parametrics_combineCW_dict[i] = run_parametrics(returns_factors, position_factors, select_macro_data = [i], 
+                                                        combine_CW_weight = 0.8, combine_CW = True, 
+                                                        name = '80% Parametrics, 20% CW')
 
-run_parametrics_combineCW_dict['All Macro Data'] = run_parametrics(returns_factors, position_factors, select_macro_data = macro_variable_list, combine_CW_weight = 0.8, combine_CW = True, name = "(All Macro Data, 80% Portfolio, 20% CW Benchmark)")
+run_parametrics_combineCW_dict['All Macro Data'] = run_parametrics(returns_factors, position_factors, select_macro_data = macro_variable_list, 
+                                                                   combine_CW_weight = 0.8, combine_CW = True, 
+                                                                   name = "80% Parametrics, 20% CW")
+
+## Evolution of Weigths
+run_parametrics_combineCW_dict['All Macro Data'][0][start_ptf:].plot(figsize=(10, 7))
+plt.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
+plt.savefig('Plot/Weights/weights_parametrics_allmacro_combineCW_basis.png', dpi=400, bbox_inches='tight')
+
+run_parametrics_combineCW_dict['VIX'][0][start_ptf:].plot(figsize=(10, 7))
+plt.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
+plt.savefig('Plot/Weights/weights_parametrics_vix_combineCW_basis.png', dpi=400, bbox_inches='tight')
+
+"""Merge Results"""
+# VIX
+return_parametrics_vix = pd.DataFrame({'CW Benchmark': cw_spi_index})
+return_parametrics_vix['Parametrics - (No TE)'] = run_parametrics_noTE_dict['VIX'][1]
+return_parametrics_vix['80% Parametrics - 20% CW'] = run_parametrics_combineCW_dict['VIX'][1]
+return_parametrics_vix[start_ptf:].apply(cum_prod).plot(figsize=(10,7), colormap = 'Set1')
+plt.savefig('Plot/Basis/parametrics_vix_basis.png', dpi=400)
+
+perf_parametrics_vix = pd.concat([perf_cwbenchmark, run_parametrics_noTE_dict['VIX'][2], run_parametrics_combineCW_dict['VIX'][2]], axis=1)
+perf_parametrics_vix.to_latex('Output/Basis/parametrics_vix_basis.tex', column_format = 'lccc', multicolumn_format='c')
+
+# All Macro
+return_parametrics_allmacro = pd.DataFrame({'CW Benchmark': cw_spi_index})
+return_parametrics_allmacro['Parametrics - (No TE)'] = run_parametrics_noTE_dict['All Macro Data'][1]
+return_parametrics_allmacro['80% Parametrics - 20% CW'] = run_parametrics_combineCW_dict['All Macro Data'][1]
+return_parametrics_allmacro[start_ptf:].apply(cum_prod).plot(figsize=(10,7), colormap = 'Set1')
+plt.savefig('Plot/Basis/parametrics_allmacro_basis.png', dpi=400)
+
+return_parametrics_allmacro = pd.concat([perf_cwbenchmark, run_parametrics_noTE_dict['All Macro Data'][2], 
+                                  run_parametrics_combineCW_dict['All Macro Data'][2]], axis=1)
+return_parametrics_allmacro.to_latex('Output/Basis/parametrics_allmacro_basis.tex', column_format = 'lccc', multicolumn_format='c')
 
 # =============================================================================
 # =============================================================================
@@ -852,51 +1020,47 @@ def VOL():
 vol = VOL()
 
 # =============================================================================
-# 6.2) Regress a 3 factors Fama-French 
+# 6.2) Regress a CAPM Regression
 # =============================================================================
 
-def run_ff_regression(returns_ptf, returns_ff, interest_rate, name):
-    
-    excess_returns = returns_ptf - interest_rate
-    
-    index_low = returns_ff.iloc[0].name
-    index_high = returns_ff.iloc[-1].name
-    
-    ff_reg = sm.OLS(excess_returns[index_low:index_high], returns_ff).fit()
-    
-    ## Merge Results
-    df_ff_results = pd.DataFrame({'Coefficient ' + name: ff_reg.params, 'T-Test ' + name: ff_reg.tvalues}).T
+"""CAPM Model Analysis"""
+capm_mktrf = pd.DataFrame({'MktRf': excess_return_market}).dropna()
+capm_mktrf_constant = sm.add_constant(capm_mktrf[start_ptf:])
 
-    df_ff_results.rename(columns={'const': 'Intercept'}, inplace=True)
+## No TE Monitor
+capm_mom_factor_noTE = run_ff_regression(return_mom_factors_noTE, capm_mktrf_constant, libor1M_CHF['1M Libor CHF']/100)
+capm_erc_noTE = run_ff_regression(return_erc_noTE, capm_mktrf_constant, libor1M_CHF['1M Libor CHF']/100)
+capm_ridge_noTE = run_ff_regression(return_erc_noTE, capm_mktrf_constant, libor1M_CHF['1M Libor CHF']/100)
+capm_parametrics_noTE = run_ff_regression(run_parametrics_noTE_dict['VIX'][1], capm_mktrf_constant[:'2021-09-01'], libor1M_CHF['1M Libor CHF']/100)
 
-    df_ff_r2 = pd.DataFrame({'R2': [ff_reg.rsquared, np.nan]}, index = df_ff_results.index)
-    
-    df_ff_merged = pd.concat([df_ff_results, df_ff_r2], axis=1)
-    
-    return df_ff_merged
+## TE Monitor by Combining it with the CW Benchmark
+capm_mom_factor_combineCW = run_ff_regression(return_mom_factors_combineCW, capm_mktrf_constant, libor1M_CHF['1M Libor CHF']/100)
+capm_erc_combineCW = run_ff_regression(return_erc_combineCW, capm_mktrf_constant, libor1M_CHF['1M Libor CHF']/100)
+capm_ridge_combineCW = run_ff_regression(return_erc_combineCW, capm_mktrf_constant, libor1M_CHF['1M Libor CHF']/100)
+capm_parametrics_combineCW = run_ff_regression(run_parametrics_combineCW_dict['VIX'][1], capm_mktrf_constant[:'2021-09-01'], libor1M_CHF['1M Libor CHF']/100)
+
+# =============================================================================
+# 6.3) Regress a 3 factors Fama-French 
+# =============================================================================
 
 """Fama-French 3 Factor Model Analysis"""
 ff3_merged = pd.DataFrame({'MktRf': excess_return_market, 'SMB': smb, 'HML': hml}).dropna()
 ff3_merged_constant = sm.add_constant(ff3_merged[start_ptf:])
 
 ## No TE Monitor
-ff3_mom_factor_noTE = run_ff_regression(return_mom_factors_noTE, ff3_merged_constant, libor1M_CHF['1M Libor CHF']/100, 'Mom. Factor')
-ff3_erc_noTE = run_ff_regression(return_erc_noTE, ff3_merged_constant, libor1M_CHF['1M Libor CHF']/100, 'ERC')
-ff3_ridge_noTE = run_ff_regression(return_erc_noTE, ff3_merged_constant, libor1M_CHF['1M Libor CHF']/100, 'Ridge')
-ff3_parametrics_noTE = run_ff_regression(run_parametrics_noTE_dict['All Macro Data'][1], ff3_merged_constant, libor1M_CHF['1M Libor CHF']/100, 'Parametrics')
-
-ff3_analysis_noTE  = pd.concat([ff3_mom_factor_noTE, ff3_erc_noTE, ff3_ridge_noTE, ff3_parametrics_noTE], axis=0)
+ff3_mom_factor_noTE = run_ff_regression(return_mom_factors_noTE, ff3_merged_constant, libor1M_CHF['1M Libor CHF']/100)
+ff3_erc_noTE = run_ff_regression(return_erc_noTE, ff3_merged_constant, libor1M_CHF['1M Libor CHF']/100)
+ff3_ridge_noTE = run_ff_regression(return_erc_noTE, ff3_merged_constant, libor1M_CHF['1M Libor CHF']/100)
+ff3_parametrics_noTE = run_ff_regression(run_parametrics_noTE_dict['VIX'][1], ff3_merged_constant, libor1M_CHF['1M Libor CHF']/100)
 
 ## TE Monitor by Combining it with the CW Benchmark
-ff3_mom_factor_combineCW  = run_ff_regression(return_mom_factors_combineCW , ff3_merged_constant, libor1M_CHF['1M Libor CHF']/100, 'Mom. Factor')
-ff3_erc_combineCW  = run_ff_regression(return_erc_combineCW , ff3_merged_constant, libor1M_CHF['1M Libor CHF']/100, 'ERC')
-ff3_ridge_combineCW  = run_ff_regression(return_erc_combineCW , ff3_merged_constant, libor1M_CHF['1M Libor CHF']/100, 'Ridge')
-ff3_parametrics_combineCW  = run_ff_regression(run_parametrics_combineCW_dict['All Macro Data'][1], ff3_merged_constant, libor1M_CHF['1M Libor CHF']/100, 'Parametrics')
-
-ff3_analysis_combineCW   = pd.concat([ff3_mom_factor_noTE, ff3_erc_noTE, ff3_ridge_noTE, ff3_parametrics_noTE], axis=0)
+ff3_mom_factor_combineCW  = run_ff_regression(return_mom_factors_combineCW , ff3_merged_constant, libor1M_CHF['1M Libor CHF']/100)
+ff3_erc_combineCW  = run_ff_regression(return_erc_combineCW , ff3_merged_constant, libor1M_CHF['1M Libor CHF']/100)
+ff3_ridge_combineCW  = run_ff_regression(return_erc_combineCW , ff3_merged_constant, libor1M_CHF['1M Libor CHF']/100)
+ff3_parametrics_combineCW  = run_ff_regression(run_parametrics_combineCW_dict['VIX'][1], ff3_merged_constant, libor1M_CHF['1M Libor CHF']/100)
 
 # =============================================================================
-# 6.3) Regress a multiple factors Fama-French
+# 6.4) Regress a multiple factors Fama-French
 # =============================================================================
 
 """Fama-French Multiple Factor Model Analysis"""
@@ -904,21 +1068,56 @@ ff_merged = pd.DataFrame({'MktRf': excess_return_market, 'SMB': smb, 'HML': hml,
 ff_merged_constant = sm.add_constant(ff_merged[start_ptf:])
 
 ## No TE Monitor
-ff_mom_factor_noTE = run_ff_regression(return_mom_factors_noTE, ff_merged_constant, libor1M_CHF['1M Libor CHF']/100, 'Mom. Factor')
-ff_erc_noTE = run_ff_regression(return_erc_noTE, ff_merged_constant, libor1M_CHF['1M Libor CHF']/100, 'ERC')
-ff_ridge_noTE = run_ff_regression(return_erc_noTE, ff_merged_constant, libor1M_CHF['1M Libor CHF']/100, 'Ridge')
-ff_parametrics_noTE = run_ff_regression(run_parametrics_noTE_dict['All Macro Data'][1], ff_merged_constant, libor1M_CHF['1M Libor CHF']/100, 'Parametrics')
-
-ff_analysis_noTE  = pd.concat([ff_mom_factor_noTE, ff_erc_noTE, ff_ridge_noTE, ff_parametrics_noTE], axis=0)
+ff_mom_factor_noTE = run_ff_regression(return_mom_factors_noTE, ff_merged_constant, libor1M_CHF['1M Libor CHF']/100)
+ff_erc_noTE = run_ff_regression(return_erc_noTE, ff_merged_constant, libor1M_CHF['1M Libor CHF']/100)
+ff_ridge_noTE = run_ff_regression(return_erc_noTE, ff_merged_constant, libor1M_CHF['1M Libor CHF']/100)
+ff_parametrics_noTE = run_ff_regression(run_parametrics_noTE_dict['VIX'][1], ff_merged_constant, libor1M_CHF['1M Libor CHF']/100)
 
 ## TE Monitor by Combining it with the CW Benchmark
-ff_mom_factor_combineCW  = run_ff_regression(return_mom_factors_combineCW , ff_merged_constant, libor1M_CHF['1M Libor CHF']/100, 'Mom. Factor')
-ff_erc_combineCW  = run_ff_regression(return_erc_combineCW , ff_merged_constant, libor1M_CHF['1M Libor CHF']/100, 'ERC')
-ff_ridge_combineCW  = run_ff_regression(return_erc_combineCW , ff_merged_constant, libor1M_CHF['1M Libor CHF']/100, 'Ridge')
-ff_parametrics_combineCW  = run_ff_regression(run_parametrics_combineCW_dict['All Macro Data'][1], ff_merged_constant, libor1M_CHF['1M Libor CHF']/100, 'Parametrics')
+ff_mom_factor_combineCW  = run_ff_regression(return_mom_factors_combineCW , ff_merged_constant, libor1M_CHF['1M Libor CHF']/100)
+ff_erc_combineCW  = run_ff_regression(return_erc_combineCW , ff_merged_constant, libor1M_CHF['1M Libor CHF']/100)
+ff_ridge_combineCW  = run_ff_regression(return_erc_combineCW , ff_merged_constant, libor1M_CHF['1M Libor CHF']/100)
+ff_parametrics_combineCW  = run_ff_regression(run_parametrics_combineCW_dict['VIX'][1], ff_merged_constant, libor1M_CHF['1M Libor CHF']/100)
 
-ff_analysis_combineCW   = pd.concat([ff_mom_factor_noTE, ff_erc_noTE, ff_ridge_noTE, ff_parametrics_noTE], axis=0)
+# =============================================================================
+# 6.5) Merge the Results
+# =============================================================================
 
+"""Momentum Factor"""
+ff_merged_momfactor_noTE = pd.concat([capm_mom_factor_noTE, ff3_mom_factor_noTE, ff_mom_factor_noTE], axis=0).replace(np.nan, '-')
+ff_merged_momfactor_noTE['R2'] = ff_merged_momfactor_noTE.pop('R2')
+ff_merged_momfactor_noTE.to_latex('Output/FF/ff_merged_momfactor_noTE.tex', column_format = 'lccccccccc', multicolumn_format='c')
+
+ff_merged_momfactor_combineCW = pd.concat([capm_mom_factor_combineCW, ff3_mom_factor_combineCW, ff_mom_factor_combineCW], axis=0).replace(np.nan, '-')
+ff_merged_momfactor_combineCW['R2'] = ff_merged_momfactor_combineCW.pop('R2')
+ff_merged_momfactor_combineCW.to_latex('Output/FF/ff_merged_momfactor_combinecw.tex')
+
+"""ERC"""
+ff_merged_erc_noTE = pd.concat([capm_erc_noTE, ff3_erc_noTE, ff_erc_noTE], axis=0).replace(np.nan, '-')
+ff_merged_erc_noTE['R2'] = ff_merged_erc_noTE.pop('R2')
+ff_merged_erc_noTE.to_latex('Output/FF/ff_merged_erc_noTE.tex')
+
+ff_merged_erc_combineCW = pd.concat([capm_erc_combineCW, ff3_erc_combineCW, ff_erc_combineCW], axis=0).replace(np.nan, '-')
+ff_merged_erc_combineCW['R2'] = ff_merged_erc_combineCW.pop('R2')
+ff_merged_erc_combineCW.to_latex('Output/FF/ff_merged_erc_combinecw.tex')
+
+"""Ridge"""
+ff_merged_ridge_noTE = pd.concat([capm_ridge_noTE, ff3_ridge_noTE, ff_ridge_noTE], axis=0).replace(np.nan, '-')
+ff_merged_ridge_noTE['R2'] = ff_merged_ridge_noTE.pop('R2')
+ff_merged_ridge_noTE.to_latex('Output/FF/ff_merged_ridge_noTE.tex')
+
+ff_merged_ridge_combineCW = pd.concat([capm_ridge_combineCW, ff3_ridge_combineCW, ff_ridge_combineCW], axis=0).replace(np.nan, '-')
+ff_merged_ridge_combineCW['R2'] = ff_merged_ridge_combineCW.pop('R2')
+ff_merged_ridge_combineCW.to_latex('Output/FF/ff_merged_ridge_combinecw.tex')
+
+"""Parametrics"""
+ff_merged_parametrics_noTE = pd.concat([capm_parametrics_noTE, ff3_parametrics_noTE, ff_parametrics_noTE], axis=0).replace(np.nan, '-')
+ff_merged_parametrics_noTE['R2'] = ff_merged_parametrics_noTE.pop('R2')
+ff_merged_parametrics_noTE.to_latex('Output/FF/ff_merged_parametrics_noTE.tex')
+
+ff_merged_parametrics_combineCW = pd.concat([capm_parametrics_combineCW, ff3_parametrics_combineCW, ff_parametrics_combineCW], axis=0).replace(np.nan, '-')
+ff_merged_parametrics_combineCW['R2'] = ff_merged_parametrics_combineCW.pop('R2')
+ff_merged_parametrics_combineCW.to_latex('Output/FF/ff_merged_parametrics_combinecw.tex')
 
 # =============================================================================
 # =============================================================================
@@ -930,114 +1129,309 @@ ff_analysis_combineCW   = pd.concat([ff_mom_factor_noTE, ff_erc_noTE, ff_ridge_n
 # 7.1) Liquidity Constraint Sensitivity
 # =============================================================================
 
-for i in [0, 0.1, 0.3, 0.5]:
-    price_spi_cons, pe_spi_cons, dividend_spi_cons, mktcap_spi_cons, beta_spi_cons, vol_spi_cons, roe_spi_con, roa_spi_con, gm_spi_cons, eps_spi_cons, trade_liq = liqudity_constraint(i)
+list_return_mom_factors_noTE = [cw_spi_index]
+list_return_mom_factors_combineCW = [cw_spi_index]
+list_perf_mom_factors = []
+
+list_return_erc_noTE = [cw_spi_index]
+list_return_erc_combineCW = [cw_spi_index]
+list_perf_erc = []
+
+list_return_ridge_noTE = [cw_spi_index]
+list_return_ridge_combineCW = [cw_spi_index]
+list_perf_ridge = []
+
+list_return_parametrics_noTE = [cw_spi_index]
+list_return_parametrics_combineCW = [cw_spi_index]
+list_perf_parametrics = []
+
+for k in [0, 0.1, 0.3, 0.5]:
+    price_spi_cons, pe_spi_cons, dividend_spi_cons, mktcap_spi_cons, beta_spi_cons, vol_spi_cons, roe_spi_con, roa_spi_con, gm_spi_cons, eps_spi_cons, trade_liq = liqudity_constraint(k)
     returns_factors, position_factors = run_factor_building(quantile = 0.5)
     
     ### Momentum of Factor ###
     """No TE Monitor"""
-    run_mom_factors_noTE = run_momentum_factors(returns_factors, position_factors, quantile = 0.5, combine_CW_weight = 0, combine_CW = False, name = '(No TE Monitor)')
-    return_mom_factors_noTE = run_mom_factors_noTE[1]
+    run_mom_factors_noTE_temp = run_momentum_factors(returns_factors, position_factors, quantile = 0.5, combine_CW_weight = 0, combine_CW = False, name = 'MF (No TE)')
+    
+    list_return_mom_factors_noTE.append(run_mom_factors_noTE_temp[1])
+    list_perf_mom_factors.append(run_mom_factors_noTE_temp[2].squeeze().tolist())
     
     """TE Monitor by Combining it with the CW Benchmark"""
-    run_mom_factors_combineCW = run_momentum_factors(returns_factors, position_factors, quantile = 0.5, combine_CW_weight = 0.8, combine_CW = True, name = "(80% Portfolio, 20% CW Benchmark)")
-    return_mom_factors_combineCW = run_mom_factors_combineCW[1]
+    run_mom_factors_combineCW_temp = run_momentum_factors(returns_factors, position_factors, quantile = 0.5, combine_CW_weight = 0.8, combine_CW = True, name = "80% MF - 20% CW")
+    
+    list_return_mom_factors_combineCW.append(run_mom_factors_combineCW_temp[1])
+    list_perf_mom_factors.append(run_mom_factors_combineCW_temp[2].squeeze().tolist())
     
     ### ERC Regression ###
     """No TE Monitor"""
-    run_erc_noTE = run_erc(returns_factors, position_factors, TE_target = 0, TE_check = False, combine_CW_weight = 0, combine_CW = False, name = "(No TE Monitor)")
-    return_erc_noTE = run_erc_noTE[1]
+    run_erc_noTE_temp = run_erc(returns_factors, position_factors, TE_target = 0, TE_check = False, combine_CW_weight = 0, combine_CW = False, name = "ERC (No TE)")
+    
+    list_return_erc_noTE.append(run_erc_noTE_temp[1])
+    list_perf_erc.append(run_erc_noTE_temp[2].squeeze().tolist())
     
     """TE Monitor by Combining it with the CW Benchmark"""
-    run_erc_combineCW = run_erc(returns_factors, position_factors, TE_target = 0, TE_check = False, combine_CW_weight = 0.80, combine_CW = True, name = "(80% Portfolio, 20% CW Benchmark)")
-    return_erc_combineCW = run_erc_combineCW[1]
+    run_erc_combineCW_temp = run_erc(returns_factors, position_factors, TE_target = 0, TE_check = False, combine_CW_weight = 0.80, combine_CW = True, name = "80% ERC - 20% CW")
+    
+    list_return_erc_combineCW.append(run_erc_combineCW_temp[1])
+    list_perf_erc.append(run_erc_combineCW_temp[2].squeeze().tolist())
     
     ### Ridge Regression ###
     """No TE Monitor"""
-    run_erc_noTE = run_erc(returns_factors, position_factors, TE_target = 0, TE_check = False, combine_CW_weight = 0, combine_CW = False, name = "(No TE Monitor)")
-    return_erc_noTE = run_erc_noTE[1]
+    run_ridge_noTE_temp = run_ridge(returns_factors, position_factors, TE_target = 0, TE_check = False, combine_CW_weight = 0, combine_CW = False, name = "Ridge (No TE)")
+    
+    list_return_ridge_noTE.append(run_ridge_noTE_temp[1])
+    list_perf_ridge.append(run_ridge_noTE_temp[2].squeeze().tolist())
     
     """TE Monitor by Combining it with the CW Benchmark"""
-    run_erc_combineCW = run_erc(returns_factors, position_factors, TE_target = 0, TE_check = False, combine_CW_weight = 0.80, combine_CW = True, name = "(80% Portfolio, 20% CW Benchmark)")
-    return_erc_combineCW = run_erc_combineCW[1]
+    run_ridge_combineCW_temp = run_ridge(returns_factors, position_factors, TE_target = 0, TE_check = False, combine_CW_weight = 0.80, combine_CW = True, name = "80% Ridge - 20% CW")
+    
+    list_return_ridge_combineCW.append(run_ridge_combineCW_temp[1])
+    list_perf_ridge.append(run_ridge_combineCW_temp[2].squeeze().tolist())
     
     ### Parametrics Model ###
     """No TE Monitor"""
-    run_parametrics_noTE_dict = {'10y Bond Yield US': [], 'VIX': [], 'CPI US': [], 
-                                 'TED Spread': [], '3M Libor US': [], '12M Libor US': [],
-                                 'All Macro Data': []}
+    run_parametrics_noTE_dict_temp = {'10y Bond Yield US': [], 'VIX': [], 'CPI US': [], 
+                                  'TED Spread': [], '3M Libor US': [], '12M Libor US': [],
+                                  'All Macro Data': []}
     
-    for i in macro_variable_list:
-        run_parametrics_noTE_dict[i] = run_parametrics(returns_factors, position_factors, select_macro_data = [i], combine_CW_weight = 0, combine_CW = False, name = f'({i}, No TE Monitor)')
+    # for i in macro_variable_list:
+    #     run_parametrics_noTE_dict_temp[i] = run_parametrics(returns_factors, position_factors, select_macro_data = [i], combine_CW_weight = 0, combine_CW = False, name = f'({i}, No TE Monitor)')
     
-    run_parametrics_noTE_dict['All Macro Data'] = run_parametrics(returns_factors, position_factors, select_macro_data = macro_variable_list, combine_CW_weight = 0, combine_CW = False, name = "(All Macro Data, No TE Monitor)")
+    # run_parametrics_noTE_dict_temp['All Macro Data'] = run_parametrics(returns_factors, position_factors, select_macro_data = macro_variable_list, combine_CW_weight = 0, combine_CW = False, name = "(All Macro Data, No TE Monitor)")
+    
+    # list_return_parametrics_noTE.append(run_parametrics_noTE_dict_temp['All Macro Data'][1])
+    # list_perf_parametrics.append(run_parametrics_noTE_dict_temp['All Macro Data'][2].squeeze().tolist()) 
+    
+    run_parametrics_noTE_dict_temp['VIX'] = run_parametrics(returns_factors, position_factors, select_macro_data = ['VIX'], 
+                                                       combine_CW_weight = 0, combine_CW = False, name = "Parametrics - VIX (No TE)")
+    
+    list_return_parametrics_noTE.append(run_parametrics_noTE_dict_temp['VIX'][1])
+    list_perf_parametrics.append(run_parametrics_noTE_dict_temp['VIX'][2].squeeze().tolist()) 
     
     """TE Monitor by Combining it with the CW Benchmark"""
-    run_parametrics_combineCW_dict = {'10y Bond Yield US': [], 'VIX': [], 'CPI US': [], 
-                                 'TED Spread': [], '3M Libor US': [], '12M Libor US': [],
-                                 'All Macro Data': []}
+    run_parametrics_combineCW_dict_temp = {'10y Bond Yield US': [], 'VIX': [], 'CPI US': [], 
+                                  'TED Spread': [], '3M Libor US': [], '12M Libor US': [],
+                                  'All Macro Data': []}
     
-    for i in macro_variable_list:
-        run_parametrics_combineCW_dict[i] = run_parametrics(returns_factors, position_factors, select_macro_data = [i], combine_CW_weight = 0.8, combine_CW = True, name = f'({i}, 80% Portfolio, 20% CW Benchmark)')
+    # for i in macro_variable_list:
+    #     run_parametrics_combineCW_dict_temp[i] = run_parametrics(returns_factors, position_factors, select_macro_data = [i], combine_CW_weight = 0.8, combine_CW = True, name = f'({i}, 80% Portfolio, 20% CW Benchmark)')
     
-    run_parametrics_combineCW_dict['All Macro Data'] = run_parametrics(returns_factors, position_factors, select_macro_data = macro_variable_list, combine_CW_weight = 0.8, combine_CW = True, name = "(All Macro Data, 80% Portfolio, 20% CW Benchmark)")
+    # run_parametrics_combineCW_dict_temp['All Macro Data'] = run_parametrics(returns_factors, position_factors, select_macro_data = macro_variable_list, combine_CW_weight = 0.8, combine_CW = True, name = "(All Macro Data, 80% Portfolio, 20% CW Benchmark)")
+    
+    # list_return_parametrics_combineCW.append(run_parametrics_combineCW_dict_temp['All Macro Data'][1])
+    # list_perf_parametrics.append(run_parametrics_combineCW_dict_temp['All Macro Data'][2].squeeze().tolist()) 
+    
+    run_parametrics_combineCW_dict_temp['VIX'] = run_parametrics(returns_factors, position_factors, select_macro_data = ['VIX'], combine_CW_weight = 0.8, combine_CW = True, name = "80% Parametrics (VIX), 20% CW")
+    
+    list_return_parametrics_combineCW.append(run_parametrics_combineCW_dict_temp['VIX'][1])
+    list_perf_parametrics.append(run_parametrics_combineCW_dict_temp['VIX'][2].squeeze().tolist()) 
+    
+### Merge Data ###
+index_liqsensitivity = ['CW Benchmark', '0% Qtl', '10% Qtl', '30% Qtl', '50% Qtl']
+mux_liqsensitivity = pd.MultiIndex.from_product([['0% Qtl', '10% Qtl', '30% Qtl', '50% Qtl'], ['No TE','20% CW']])
+
+"""Momentum of Factor"""
+return_mom_factors_noTE_liqsentivity = pd.DataFrame(list_return_mom_factors_noTE, index_liqsensitivity).T
+return_mom_factors_noTE_liqsentivity[start_ptf:].apply(cum_prod).plot(figsize=(10,7), colormap = 'Set1')
+plt.savefig('Plot/Sensitivity/Liquidity/return_mom_factors_noTE_liqsentivity.png', dpi=400)
+
+return_mom_factors_combineCW_liqsentivity = pd.DataFrame(list_return_mom_factors_combineCW, index_liqsensitivity).T
+return_mom_factors_combineCW_liqsentivity[start_ptf:].apply(cum_prod).plot(figsize=(10,7), colormap = 'Set1')
+plt.savefig('Plot/Sensitivity/Liquidity/return_mom_factors_combineCW_liqsentivity.png', dpi=400)
+
+perf_mom_factors_liqsentivity = pd.DataFrame(list_perf_mom_factors , index=mux_liqsensitivity, columns=perf_cwbenchmark.index).T
+perf_mom_factors_liqsentivity.to_latex('Output/Sensitivity/Liquidity/perf_mom_factors_liqsentivity.tex', column_format = 'lcccccccc', multicolumn_format='c')
+
+"""ERC"""
+return_erc_noTE_liqsentivity = pd.DataFrame(list_return_erc_noTE, index_liqsensitivity).T
+return_erc_noTE_liqsentivity[start_ptf:].apply(cum_prod).plot(figsize=(10,7), colormap = 'Set1')
+plt.savefig('Plot/Sensitivity/Liquidity/return_erc_noTE_liqsentivity.png', dpi=400)
+
+return_erc_combineCW_liqsentivity = pd.DataFrame(list_return_erc_combineCW, index_liqsensitivity).T
+return_erc_combineCW_liqsentivity[start_ptf:].apply(cum_prod).plot(figsize=(10,7), colormap = 'Set1')
+plt.savefig('Plot/Sensitivity/Liquidity/return_erc_combineCW_liqsentivity.png', dpi=400)
+
+perf_erc_liqsentivity = pd.DataFrame(list_perf_erc, index=mux_liqsensitivity, columns=perf_cwbenchmark.index).T
+perf_erc_liqsentivity.to_latex('Output/Sensitivity/Liquidity/perf_erc_liqsentivity.tex', column_format = 'lcccccccc', multicolumn_format='c')
+
+"""Ridge"""
+return_ridge_noTE_liqsentivity = pd.DataFrame(list_return_ridge_noTE, index_liqsensitivity).T
+return_ridge_noTE_liqsentivity[start_ptf:].apply(cum_prod).plot(figsize=(10,7), colormap = 'Set1')
+plt.savefig('Plot/Sensitivity/Liquidity/return_ridge_noTE_liqsentivity.png', dpi=400)
+
+return_ridge_combineCW_liqsentivity = pd.DataFrame(list_return_ridge_combineCW, index_liqsensitivity).T
+return_ridge_combineCW_liqsentivity[start_ptf:].apply(cum_prod).plot(figsize=(10,7), colormap = 'Set1')
+plt.savefig('Plot/Sensitivity/Liquidity/return_ridge_combineCW_liqsentivity.png', dpi=400)
+
+perf_ridge_liqsentivity = pd.DataFrame(list_perf_ridge, index=mux_liqsensitivity, columns=perf_cwbenchmark.index).T
+perf_ridge_liqsentivity.to_latex('Output/Sensitivity/Liquidity/perf_ridge_liqsentivity.tex', column_format = 'lcccccccc', multicolumn_format='c')
+
+"""Parametrics"""
+return_parametrics_noTE_liqsentivity = pd.DataFrame(list_return_parametrics_noTE, index_liqsensitivity).T
+return_parametrics_noTE_liqsentivity[start_ptf:].apply(cum_prod).plot(figsize=(10,7), colormap = 'Set1')
+plt.savefig('Plot/Sensitivity/Liquidity/return_parametrics_noTE_liqsentivity.png', dpi=400)
+
+return_parametrics_combineCW_liqsentivity = pd.DataFrame(list_return_parametrics_combineCW, index_liqsensitivity).T
+return_parametrics_combineCW_liqsentivity[start_ptf:].apply(cum_prod).plot(figsize=(10,7), colormap = 'Set1')
+plt.savefig('Plot/Sensitivity/Liquidity/return_parametrics_combineCW_liqsentivity.png', dpi=400)
+
+perf_parametrics_liqsentivity = pd.DataFrame(list_perf_parametrics, index=mux_liqsensitivity, columns=perf_cwbenchmark.index).T
+perf_parametrics_liqsentivity.to_latex('Output/Sensitivity/Liquidity/perf_parametrics_liqsentivity.tex', column_format = 'lcccccccc', multicolumn_format='c')
 
 # =============================================================================
 # 7.2) Factor Construction Quantile Sensitivity        
 # =============================================================================
 
+list_return_mom_factors_noTE = [cw_spi_index]
+list_return_mom_factors_combineCW = [cw_spi_index]
+list_perf_mom_factors = []
+
+list_return_erc_noTE = [cw_spi_index]
+list_return_erc_combineCW = [cw_spi_index]
+list_perf_erc = []
+
+list_return_ridge_noTE = [cw_spi_index]
+list_return_ridge_combineCW = [cw_spi_index]
+list_perf_ridge = []
+
+list_return_parametrics_noTE = [cw_spi_index]
+list_return_parametrics_combineCW = [cw_spi_index]
+list_perf_parametrics = []
+
 price_spi_cons, pe_spi_cons, dividend_spi_cons, mktcap_spi_cons, beta_spi_cons, vol_spi_cons, roe_spi_con, roa_spi_con, gm_spi_cons, eps_spi_cons, trade_liq = liqudity_constraint(0.25)
 
-for i in [0.3, 0.4, 0.6, 0.7]:
-    returns_factors, position_factors = run_factor_building(quantile = i)
+for k in [0.2, 0.3, 0.4, 0.6]:
+    returns_factors, position_factors = run_factor_building(quantile = k)
     
     ### Momentum of Factor ###
     """No TE Monitor"""
-    run_mom_factors_noTE = run_momentum_factors(returns_factors, position_factors, quantile = 0.5, combine_CW_weight = 0, combine_CW = False, name = '(No TE Monitor)')
-    return_mom_factors_noTE = run_mom_factors_noTE[1]
+    run_mom_factors_noTE_temp = run_momentum_factors(returns_factors, position_factors, quantile = 0.5, combine_CW_weight = 0, combine_CW = False, name = 'MF (No TE)')
+    
+    list_return_mom_factors_noTE.append(run_mom_factors_noTE_temp[1])
+    list_perf_mom_factors.append(run_mom_factors_noTE_temp[2].squeeze().tolist())
     
     """TE Monitor by Combining it with the CW Benchmark"""
-    run_mom_factors_combineCW = run_momentum_factors(returns_factors, position_factors, quantile = 0.5, combine_CW_weight = 0.8, combine_CW = True, name = "(80% Portfolio, 20% CW Benchmark)")
-    return_mom_factors_combineCW = run_mom_factors_combineCW[1]
+    run_mom_factors_combineCW_temp = run_momentum_factors(returns_factors, position_factors, quantile = 0.5, combine_CW_weight = 0.8, combine_CW = True, name = "80% MF - 20% CW")
+    
+    list_return_mom_factors_combineCW.append(run_mom_factors_combineCW_temp[1])
+    list_perf_mom_factors.append(run_mom_factors_combineCW_temp[2].squeeze().tolist())
     
     ### ERC Regression ###
     """No TE Monitor"""
-    run_erc_noTE = run_erc(returns_factors, position_factors, TE_target = 0, TE_check = False, combine_CW_weight = 0, combine_CW = False, name = "(No TE Monitor)")
-    return_erc_noTE = run_erc_noTE[1]
+    run_erc_noTE_temp = run_erc(returns_factors, position_factors, TE_target = 0, TE_check = False, combine_CW_weight = 0, combine_CW = False, name = "ERC (No TE)")
+    
+    list_return_erc_noTE.append(run_erc_noTE_temp[1])
+    list_perf_erc.append(run_erc_noTE_temp[2].squeeze().tolist())
     
     """TE Monitor by Combining it with the CW Benchmark"""
-    run_erc_combineCW = run_erc(returns_factors, position_factors, TE_target = 0, TE_check = False, combine_CW_weight = 0.80, combine_CW = True, name = "(80% Portfolio, 20% CW Benchmark)")
-    return_erc_combineCW = run_erc_combineCW[1]
+    run_erc_combineCW_temp = run_erc(returns_factors, position_factors, TE_target = 0, TE_check = False, combine_CW_weight = 0.80, combine_CW = True, name = "80% ERC - 20% CW")
+    
+    list_return_erc_combineCW.append(run_erc_combineCW_temp[1])
+    list_perf_erc.append(run_erc_combineCW_temp[2].squeeze().tolist())
     
     ### Ridge Regression ###
     """No TE Monitor"""
-    run_erc_noTE = run_erc(returns_factors, position_factors, TE_target = 0, TE_check = False, combine_CW_weight = 0, combine_CW = False, name = "(No TE Monitor)")
-    return_erc_noTE = run_erc_noTE[1]
+    run_ridge_noTE_temp = run_ridge(returns_factors, position_factors, TE_target = 0, TE_check = False, combine_CW_weight = 0, combine_CW = False, name = "Ridge (No TE)")
+    
+    list_return_ridge_noTE.append(run_ridge_noTE_temp[1])
+    list_perf_ridge.append(run_ridge_noTE_temp[2].squeeze().tolist())
     
     """TE Monitor by Combining it with the CW Benchmark"""
-    run_erc_combineCW = run_erc(returns_factors, position_factors, TE_target = 0, TE_check = False, combine_CW_weight = 0.80, combine_CW = True, name = "(80% Portfolio, 20% CW Benchmark)")
-    return_erc_combineCW = run_erc_combineCW[1]
+    run_ridge_combineCW_temp = run_ridge(returns_factors, position_factors, TE_target = 0, TE_check = False, combine_CW_weight = 0.80, combine_CW = True, name = "80% Ridge - 20% CW")
+    
+    list_return_ridge_combineCW.append(run_ridge_combineCW_temp[1])
+    list_perf_ridge.append(run_ridge_combineCW_temp[2].squeeze().tolist())
     
     ### Parametrics Model ###
     """No TE Monitor"""
-    run_parametrics_noTE_dict = {'10y Bond Yield US': [], 'VIX': [], 'CPI US': [], 
-                                 'TED Spread': [], '3M Libor US': [], '12M Libor US': [],
-                                 'All Macro Data': []}
+    run_parametrics_noTE_dict_temp = {'10y Bond Yield US': [], 'VIX': [], 'CPI US': [], 
+                                  'TED Spread': [], '3M Libor US': [], '12M Libor US': [],
+                                  'All Macro Data': []}
     
-    for i in macro_variable_list:
-        run_parametrics_noTE_dict[i] = run_parametrics(returns_factors, position_factors, select_macro_data = [i], combine_CW_weight = 0, combine_CW = False, name = f'({i}, No TE Monitor)')
+    # for i in macro_variable_list:
+    #     run_parametrics_noTE_dict_temp[i] = run_parametrics(returns_factors, position_factors, select_macro_data = [i], combine_CW_weight = 0, combine_CW = False, name = f'({i}, No TE Monitor)')
     
-    run_parametrics_noTE_dict['All Macro Data'] = run_parametrics(returns_factors, position_factors, select_macro_data = macro_variable_list, combine_CW_weight = 0, combine_CW = False, name = "(All Macro Data, No TE Monitor)")
+    # run_parametrics_noTE_dict_temp['All Macro Data'] = run_parametrics(returns_factors, position_factors, select_macro_data = macro_variable_list, combine_CW_weight = 0, combine_CW = False, name = "(All Macro Data, No TE Monitor)")
+    
+    # list_return_parametrics_noTE.append(run_parametrics_noTE_dict_temp['All Macro Data'][1])
+    # list_perf_parametrics.append(run_parametrics_noTE_dict_temp['All Macro Data'][2].squeeze().tolist()) 
+    
+    run_parametrics_noTE_dict_temp['VIX'] = run_parametrics(returns_factors, position_factors, select_macro_data = ['VIX'], 
+                                                       combine_CW_weight = 0, combine_CW = False, name = "Parametrics - VIX (No TE)")
+    
+    list_return_parametrics_noTE.append(run_parametrics_noTE_dict_temp['VIX'][1])
+    list_perf_parametrics.append(run_parametrics_noTE_dict_temp['VIX'][2].squeeze().tolist()) 
     
     """TE Monitor by Combining it with the CW Benchmark"""
-    run_parametrics_combineCW_dict = {'10y Bond Yield US': [], 'VIX': [], 'CPI US': [], 
-                                 'TED Spread': [], '3M Libor US': [], '12M Libor US': [],
-                                 'All Macro Data': []}
+    run_parametrics_combineCW_dict_temp = {'10y Bond Yield US': [], 'VIX': [], 'CPI US': [], 
+                                  'TED Spread': [], '3M Libor US': [], '12M Libor US': [],
+                                  'All Macro Data': []}
     
-    for i in macro_variable_list:
-        run_parametrics_combineCW_dict[i] = run_parametrics(returns_factors, position_factors, select_macro_data = [i], combine_CW_weight = 0.8, combine_CW = True, name = f'({i}, 80% Portfolio, 20% CW Benchmark)')
+    # for i in macro_variable_list:
+    #     run_parametrics_combineCW_dict_temp[i] = run_parametrics(returns_factors, position_factors, select_macro_data = [i], combine_CW_weight = 0.8, combine_CW = True, name = f'({i}, 80% Portfolio, 20% CW Benchmark)')
     
-    run_parametrics_combineCW_dict['All Macro Data'] = run_parametrics(returns_factors, position_factors, select_macro_data = macro_variable_list, combine_CW_weight = 0.8, combine_CW = True, name = "(All Macro Data, 80% Portfolio, 20% CW Benchmark)")
+    # run_parametrics_combineCW_dict_temp['All Macro Data'] = run_parametrics(returns_factors, position_factors, select_macro_data = macro_variable_list, combine_CW_weight = 0.8, combine_CW = True, name = "(All Macro Data, 80% Portfolio, 20% CW Benchmark)")
+    
+    # list_return_parametrics_combineCW.append(run_parametrics_combineCW_dict_temp['All Macro Data'][1])
+    # list_perf_parametrics.append(run_parametrics_combineCW_dict_temp['All Macro Data'][2].squeeze().tolist()) 
+    
+    run_parametrics_combineCW_dict_temp['VIX'] = run_parametrics(returns_factors, position_factors, select_macro_data = ['VIX'], 
+                                                                 combine_CW_weight = 0.8, combine_CW = True, name = "80% Parametrics (VIX), 20% CW")
+    
+    list_return_parametrics_combineCW.append(run_parametrics_combineCW_dict_temp['VIX'][1])
+    list_perf_parametrics.append(run_parametrics_combineCW_dict_temp['VIX'][2].squeeze().tolist()) 
+     
+### Merge Data ###
+index_fsensitivity = ['CW Benchmark', '20% Qtl', '30% Qtl', '40% Qtl', '60% Qtl']
+mux_fsensitivity = pd.MultiIndex.from_product([['20% Qtl', '30% Qtl', '40% Qtl', '60% Qtl'], ['No TE','20% CW']])
+
+"""Momentum of Factor"""
+return_mom_factors_noTE_fsensitivity = pd.DataFrame(list_return_mom_factors_noTE, index_fsensitivity).T
+return_mom_factors_noTE_fsensitivity[start_ptf:].apply(cum_prod).plot(figsize=(10,7), colormap = 'Set1')
+plt.savefig('Plot/Sensitivity/FactorQuantile/return_mom_factors_noTE_fsentivity.png', dpi=400)
+
+return_mom_factors_combineCW_fsensitivity = pd.DataFrame(list_return_mom_factors_combineCW, index_fsensitivity).T
+return_mom_factors_combineCW_fsensitivity[start_ptf:].apply(cum_prod).plot(figsize=(10,7), colormap = 'Set1')
+plt.savefig('Plot/Sensitivity/FactorQuantile/return_mom_factors_combineCW_fsentivity.png', dpi=400)
+
+perf_mom_factors_fsensitivity = pd.DataFrame(list_perf_mom_factors , index=mux_fsensitivity, columns=perf_cwbenchmark.index).T
+perf_mom_factors_fsensitivity.to_latex('Output/Sensitivity/FactorQuantile/perf_mom_factors_fsentivity.tex', column_format = 'lcccccccc', multicolumn_format='c')
+
+"""ERC"""
+return_erc_noTE_fsensitivity = pd.DataFrame(list_return_erc_noTE, index_fsensitivity).T
+return_erc_noTE_fsensitivity[start_ptf:].apply(cum_prod).plot(figsize=(10,7), colormap = 'Set1')
+plt.savefig('Plot/Sensitivity/FactorQuantile/return_erc_noTE_fsentivity.png', dpi=400)
+
+return_erc_combineCW_fsensitivity = pd.DataFrame(list_return_erc_combineCW, index_fsensitivity).T
+return_erc_combineCW_fsensitivity[start_ptf:].apply(cum_prod).plot(figsize=(10,7), colormap = 'Set1')
+plt.savefig('Plot/Sensitivity/FactorQuantile/return_erc_combineCW_fsentivity.png', dpi=400)
+
+perf_erc_fsensitivity = pd.DataFrame(list_perf_erc, index=mux_fsensitivity, columns=perf_cwbenchmark.index).T
+perf_erc_fsensitivity.to_latex('Output/Sensitivity/FactorQuantile/perf_erc_fsentivity.tex', column_format = 'lcccccccc', multicolumn_format='c')
+
+"""Ridge"""
+return_ridge_noTE_fsensitivity = pd.DataFrame(list_return_ridge_noTE, index_fsensitivity).T
+return_ridge_noTE_fsensitivity[start_ptf:].apply(cum_prod).plot(figsize=(10,7), colormap = 'Set1')
+plt.savefig('Plot/Sensitivity/FactorQuantile/return_ridge_noTE_fsentivity.png', dpi=400)
+
+return_ridge_combineCW_fsensitivity = pd.DataFrame(list_return_ridge_combineCW, index_fsensitivity).T
+return_ridge_combineCW_fsensitivity[start_ptf:].apply(cum_prod).plot(figsize=(10,7), colormap = 'Set1')
+plt.savefig('Plot/Sensitivity/FactorQuantile/return_ridge_combineCW_fsentivity.png', dpi=400)
+
+perf_ridge_fsensitivity = pd.DataFrame(list_perf_ridge, index=mux_fsensitivity, columns=perf_cwbenchmark.index).T
+perf_ridge_fsensitivity.to_latex('Output/Sensitivity/FactorQuantile/perf_ridge_fsentivity.tex', column_format = 'lcccccccc', multicolumn_format='c')
+
+"""Parametrics"""
+return_parametrics_noTE_fsensitivity = pd.DataFrame(list_return_parametrics_noTE, index_fsensitivity).T
+return_parametrics_noTE_fsensitivity[start_ptf:].apply(cum_prod).plot(figsize=(10,7), colormap = 'Set1')
+plt.savefig('Plot/Sensitivity/FactorQuantile/return_parametrics_noTE_fsentivity.png', dpi=400)
+
+return_parametrics_combineCW_fsensitivity = pd.DataFrame(list_return_parametrics_combineCW, index_fsensitivity).T
+return_parametrics_combineCW_fsensitivity[start_ptf:].apply(cum_prod).plot(figsize=(10,7), colormap = 'Set1')
+plt.savefig('Plot/Sensitivity/FactorQuantile/return_parametrics_combineCW_fsentivity.png', dpi=400)
+
+perf_parametrics_fsensitivity = pd.DataFrame(list_perf_parametrics, index=mux_fsensitivity, columns=perf_cwbenchmark.index).T
+perf_parametrics_fsensitivity.to_latex('Output/Sensitivity/FactorQuantile/perf_parametrics_fsentivity.tex', column_format = 'lcccccccc', multicolumn_format='c')
 
 # =============================================================================
 # 7.3) Combination with CW Benchmark Sensitivity (TE Reduction)
@@ -1046,56 +1440,85 @@ for i in [0.3, 0.4, 0.6, 0.7]:
 price_spi_cons, pe_spi_cons, dividend_spi_cons, mktcap_spi_cons, beta_spi_cons, vol_spi_cons, roe_spi_con, roa_spi_con, gm_spi_cons, eps_spi_cons, trade_liq = liqudity_constraint(0.25)
 returns_factors, position_factors = run_factor_building(quantile = 0.5)
 
-for i in [0.5, 0.6, 0.7, 0.9]:
-    
-    ### Momentum of Factor ###
-    """No TE Monitor"""
-    run_mom_factors_noTE = run_momentum_factors(returns_factors, position_factors, quantile = 0.5, combine_CW_weight = 0, combine_CW = False, name = '(No TE Monitor)')
-    return_mom_factors_noTE = run_mom_factors_noTE[1]
-    
+mom_factor_return_cwsensitivity = pd.DataFrame({'CW Benchmark': cw_spi_index})
+erc_return_cwsensitivity = pd.DataFrame({'CW Benchmark': cw_spi_index})
+ridge_return_cwsensitivity = pd.DataFrame({'CW Benchmark': cw_spi_index})
+parametrics_return_cwsensitivity = pd.DataFrame({'CW Benchmark': cw_spi_index})
+
+list_perf_mom_factors = []
+list_perf_erc = []
+list_perf_ridge = []
+list_perf_parametrics = []
+
+for k in [0.5, 0.6, 0.7, 0.9]:
+    ### Momentum of Factor ###    
     """TE Monitor by Combining it with the CW Benchmark"""
-    run_mom_factors_combineCW = run_momentum_factors(returns_factors, position_factors, quantile = 0.5, combine_CW_weight = 0.8, combine_CW = True, name = "(80% Portfolio, 20% CW Benchmark)")
-    return_mom_factors_combineCW = run_mom_factors_combineCW[1]
+    run_mom_factors_combineCW_temp = run_momentum_factors(returns_factors, position_factors, quantile = 0.5, combine_CW_weight = k, combine_CW = True, name = f'{k*100}% Mom. Factor, {round((1-k)*100)}% CW')
+
+    mom_factor_return_cwsensitivity[f'{k*100}% Mom. Factor, {round((1-k)*100)}% CW'] = run_mom_factors_combineCW_temp[1]
+    list_perf_mom_factors.append(run_mom_factors_combineCW_temp[2].squeeze().tolist())
     
     ### ERC Regression ###
-    """No TE Monitor"""
-    run_erc_noTE = run_erc(returns_factors, position_factors, TE_target = 0, TE_check = False, combine_CW_weight = 0, combine_CW = False, name = "(No TE Monitor)")
-    return_erc_noTE = run_erc_noTE[1]
-    
     """TE Monitor by Combining it with the CW Benchmark"""
-    run_erc_combineCW = run_erc(returns_factors, position_factors, TE_target = 0, TE_check = False, combine_CW_weight = 0.80, combine_CW = True, name = "(80% Portfolio, 20% CW Benchmark)")
-    return_erc_combineCW = run_erc_combineCW[1]
+    run_erc_combineCW_temp = run_erc(returns_factors, position_factors, TE_target = 0, TE_check = False, combine_CW_weight = k, combine_CW = True, name = f'{k*100}% ERC, {round((1-k)*100)}% CW')
+
+    erc_return_cwsensitivity[f'{k*100}% ERC, {round((1-k)*100)}% CW'] = run_erc_combineCW_temp[1]    
+    list_perf_erc.append(run_erc_combineCW_temp[2].squeeze().tolist())
     
-    ### Ridge Regression ###
-    """No TE Monitor"""
-    run_erc_noTE = run_erc(returns_factors, position_factors, TE_target = 0, TE_check = False, combine_CW_weight = 0, combine_CW = False, name = "(No TE Monitor)")
-    return_erc_noTE = run_erc_noTE[1]
-    
+    ### Ridge Regression ### 
     """TE Monitor by Combining it with the CW Benchmark"""
-    run_erc_combineCW = run_erc(returns_factors, position_factors, TE_target = 0, TE_check = False, combine_CW_weight = 0.80, combine_CW = True, name = "(80% Portfolio, 20% CW Benchmark)")
-    return_erc_combineCW = run_erc_combineCW[1]
+    run_ridge_combineCW_temp = run_ridge(returns_factors, position_factors, TE_target = 0, TE_check = False, combine_CW_weight = k, combine_CW = True, name = f'{k*100}% Ridge, {round((1-k)*100)}% CW')
+
+    ridge_return_cwsensitivity[f'{k*100}% Ridge, {round((1-k)*100)}% CW'] = run_ridge_combineCW_temp[1]    
+    list_perf_ridge.append(run_ridge_combineCW_temp[2].squeeze().tolist())
     
     ### Parametrics Model ###
-    """No TE Monitor"""
-    run_parametrics_noTE_dict = {'10y Bond Yield US': [], 'VIX': [], 'CPI US': [], 
-                                 'TED Spread': [], '3M Libor US': [], '12M Libor US': [],
-                                 'All Macro Data': []}
-    
-    for i in macro_variable_list:
-        run_parametrics_noTE_dict[i] = run_parametrics(returns_factors, position_factors, select_macro_data = [i], combine_CW_weight = 0, combine_CW = False, name = f'({i}, No TE Monitor)')
-    
-    run_parametrics_noTE_dict['All Macro Data'] = run_parametrics(returns_factors, position_factors, select_macro_data = macro_variable_list, combine_CW_weight = 0, combine_CW = False, name = "(All Macro Data, No TE Monitor)")
-    
     """TE Monitor by Combining it with the CW Benchmark"""
-    run_parametrics_combineCW_dict = {'10y Bond Yield US': [], 'VIX': [], 'CPI US': [], 
-                                 'TED Spread': [], '3M Libor US': [], '12M Libor US': [],
-                                 'All Macro Data': []}
+    run_parametrics_combineCW_dict_temp = {'10y Bond Yield US': [], 'VIX': [], 'CPI US': [], 
+                                  'TED Spread': [], '3M Libor US': [], '12M Libor US': [],
+                                  'All Macro Data': []}
     
-    for i in macro_variable_list:
-        run_parametrics_combineCW_dict[i] = run_parametrics(returns_factors, position_factors, select_macro_data = [i], combine_CW_weight = 0.8, combine_CW = True, name = f'({i}, 80% Portfolio, 20% CW Benchmark)')
+    # for i in macro_variable_list:
+    #     run_parametrics_combineCW_dict[i] = run_parametrics(returns_factors, position_factors, select_macro_data = [i], combine_CW_weight = k, combine_CW = True, name = f'({i}, 80% Portfolio, 20% CW Benchmark)')
     
-    run_parametrics_combineCW_dict['All Macro Data'] = run_parametrics(returns_factors, position_factors, select_macro_data = macro_variable_list, combine_CW_weight = 0.8, combine_CW = True, name = "(All Macro Data, 80% Portfolio, 20% CW Benchmark)")
+    # run_parametrics_combineCW_dict['All Macro Data'] = run_parametrics(returns_factors, position_factors, select_macro_data = macro_variable_list, combine_CW_weight = k, combine_CW = True, name = "(All Macro Data, 80% Portfolio, 20% CW Benchmark)")
+    
+    run_parametrics_combineCW_dict_temp['VIX'] = run_parametrics(returns_factors, position_factors, select_macro_data = ['VIX'], 
+                                                            combine_CW_weight = k, combine_CW = True, name = f'{k*100}% Parametrics, {round((1-k)*100)}% CW')
+    
+    parametrics_return_cwsensitivity[f'{k*100}% Parametrics, {round((1-k)*100)}% CW'] = run_parametrics_combineCW_dict_temp['VIX'][1]    
+    list_perf_parametrics.append(run_parametrics_combineCW_dict_temp['VIX'][2].squeeze().tolist())
+    
+### Merge Data ###
+index_cwsensitivity = ['50% Ptf, 50% CW', '60% Ptf, 40% CW', '70% Ptf, 30% CW', '90% Ptf, 10% CW']
 
+"""Momentum of Factor"""
+mom_factor_return_cwsensitivity[start_ptf:].apply(cum_prod).plot(figsize=(10,7), colormap = 'Set1')
+plt.savefig('Plot/Sensitivity/CW/return_mom_factor_cwsentivity.png', dpi=400)
+
+perf_mom_factors_cwsentivity = pd.DataFrame(list_perf_mom_factors,index=index_cwsensitivity, columns=perf_cwbenchmark.index).T
+perf_mom_factors_cwsentivity.to_latex('Output/Sensitivity/CW/perf_mom_factor_cwsentivity.tex', column_format = 'lcccc', multicolumn_format='c')
+
+"""ERC"""
+erc_return_cwsensitivity[start_ptf:].apply(cum_prod).plot(figsize=(10,7), colormap = 'Set1')
+plt.savefig('Plot/Sensitivity/CW/return_erc_cwsentivity.png', dpi=400)
+
+perf_erc_cwsentivity = pd.DataFrame(list_perf_erc,index=index_cwsensitivity, columns=perf_cwbenchmark.index).T
+perf_erc_cwsentivity.to_latex('Output/Sensitivity/CW/perf_erc_cwsentivity.tex', column_format = 'lcccc', multicolumn_format='c')
+
+"""Ridge"""
+ridge_return_cwsensitivity[start_ptf:].apply(cum_prod).plot(figsize=(10,7), colormap = 'Set1')
+plt.savefig('Plot/Sensitivity/CW/return_ridge_cwsentivity.png', dpi=400)
+
+perf_ridge_cwsentivity = pd.DataFrame(list_perf_ridge,index=index_cwsensitivity, columns=perf_cwbenchmark.index).T
+perf_ridge_cwsentivity.to_latex('Output/Sensitivity/CW/perf_ridge_cwsentivity.tex', column_format = 'lcccc', multicolumn_format='c')
+
+"""Parametrics"""
+parametrics_return_cwsensitivity[start_ptf:].apply(cum_prod).plot(figsize=(10,7), colormap = 'Set1')
+plt.savefig('Plot/Sensitivity/CW/return_parametrics_cwsentivity.png', dpi=400)
+
+perf_parametrics_cwsentivity = pd.DataFrame(list_perf_parametrics,index=index_cwsensitivity, columns=perf_cwbenchmark.index).T
+perf_parametrics_cwsentivity.to_latex('Output/Sensitivity/CW/perf_parametrics_cwsentivity.tex', column_format = 'lcccc', multicolumn_format='c')
 
 # =============================================================================
 # =============================================================================

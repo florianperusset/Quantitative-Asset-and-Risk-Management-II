@@ -22,10 +22,6 @@ import numpy as np
 from tqdm import tqdm
 import os
 
-#Create files in the working directory
-#if not os.path.isdir('Plot'):
-#    os.makedirs('Plot')
-
 def cum_prod(returns):
     """
     This function determine the the cumulative returns.
@@ -185,10 +181,14 @@ def info_ratio(return_p, return_b):
         It returns the annualized info. ratio.
 
     """
-    excess = return_p - return_b
-    return (excess.mean(axis=0)*12)/(excess.std(axis=0)*(12**0.5))
+    try:
+        excess = return_p - return_b
+        ir_result = (excess.mean(axis=0)*12)/(excess.std(axis=0)*(12**0.5))
+    except:
+        ir_result = 0
+    return ir_result
 
-def perf(returns_ptf, returns_benchmark, name):
+def perf(returns_ptf, returns_benchmark, rf, name):
     """
     This function compute all the required performances of a time series.
     It also plot the cumulative return of the portfolio vs. benchmark
@@ -209,22 +209,21 @@ def perf(returns_ptf, returns_benchmark, name):
         Sharpe ratio, max drawdown, hit ratio, ex post TE and info. ratio . 
 
     """
-    plt.figure(figsize=(10,7))
+    
     exp = np.mean(returns_ptf,0)*12
     vol = np.std(returns_ptf,0)*np.power(12,0.5)
-    sharpe = exp/vol
+    sharpe = (exp-rf)/vol
     max_dd = max_drawdown((returns_ptf+1).cumprod())
-    plt.title("Evolution of Max Drawdown", fontsize=15)
     hit = hit_ratio(returns_ptf)
     expost_TE = TE_expost(returns_ptf, returns_benchmark)
-    #ir = info_ratio(returns_ptf, returns_benchmark)
-    df = pd.DataFrame({name: [exp, vol, sharpe, max_dd.min(), hit, expost_TE]}, 
-                      index = ['Annualized Return', 'Annualized STD', 'Sharpe Ratio', 'Max Drawdown', 'Hit Ratio', 'TE Ex-Post'])
-    plt.plot(cum_prod(returns_ptf), 'b', label=name)
-    plt.plot(cum_prod(returns_benchmark), 'r', label='CW Benchmark')
-    plt.legend(loc='upper left', frameon=True)
-    plt.title("Cumulative Return", fontsize=15)
-    #plt.savefig('Plot/'+name+'.png')
-    plt.show()
-    plt.close()
-    return df
+    ir = info_ratio(returns_ptf, returns_benchmark)    
+    risk = risk_historical(returns_ptf, 0.95, 12)
+    VaR = risk['VaR'].mean()
+    ES = risk['ES'].mean()
+    
+    df = pd.DataFrame({name: [exp*100, vol*100, sharpe, max_dd.min()*100, hit*100, 
+                              expost_TE*100, ir, VaR*100, ES*100]}, 
+                      index = ['Ann. Return (%)', 'Ann. STD (%)', 'SR', 
+                               'Max DD (%)', 'Hit Ratio (%)', 'TE Ex-Post (%)', 
+                               'Info. Ratio', 'VaR (%)', 'ES (%)']).replace(np.nan, 0)
+    return df.round(3)
