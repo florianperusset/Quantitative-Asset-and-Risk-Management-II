@@ -54,7 +54,7 @@ def factor_building(metric, quantile, long_above_quantile=True, ew_position=True
     if ew_position:
         position_factor = position_factor.div(position_factor.sum(axis=1), axis=0).replace(np.nan,0)
         
-    return position_factor
+    return position_factor.iloc[12:]
 
 def run_ff_regression(returns_ptf, returns_ff, interest_rate):
     
