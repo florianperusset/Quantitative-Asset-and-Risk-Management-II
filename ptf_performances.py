@@ -227,3 +227,16 @@ def perf(returns_ptf, returns_benchmark, rf, name):
                                'Max DD (%)', 'Hit Ratio (%)', 'TE Ex-Post (%)', 
                                'Info. Ratio', 'VaR (%)', 'ES (%)']).replace(np.nan, 0)
     return df.round(3)
+
+def avg_returns(returns):
+    
+    avg_1y = returns.iloc[-12:].mean()*12
+    avg_3y = returns.iloc[-12*3:].mean()*12
+    avg_5y = returns.iloc[-12*5:].mean()*12
+    avg_10y = returns.iloc[-12*10:].mean()*12
+    avg_all = returns.mean()*12
+    
+    df = pd.DataFrame({returns.name: [avg_1y*100, avg_3y*100, avg_5y*100, avg_10y*100, avg_all*100]}, 
+                                      index = ['1 Year', '3 Years', '5 Years', '10 Years', 'Since Inception']).round(2).T
+    
+    return df

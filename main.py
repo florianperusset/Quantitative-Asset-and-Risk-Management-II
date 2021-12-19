@@ -70,7 +70,7 @@ os.chdir("/Users/sebastiengorgoni/Documents/HEC Master/Semester 5.1/Quantitative
 
 from import_data import get_spi
 from optimization_criteria import criterion_erc, criterion_ridge
-from ptf_performances import cum_prod, perf, risk_historical, TE_exante
+from ptf_performances import cum_prod, perf, risk_historical, TE_exante, avg_returns
 from factor_building import factor_building, run_ff_regression
 
 # Alpha Vantage Key: O6PSHZOQS29QHD3E
@@ -83,6 +83,9 @@ start_ptf = '2009-01-01'
 if not os.path.isdir('Plot'):
     os.makedirs('Plot')
     
+if not os.path.isdir('Plot/Summary'):
+    os.makedirs('Plot/Summary')
+
 if not os.path.isdir('Plot/Basis'):
     os.makedirs('Plot/Basis')
     
@@ -106,6 +109,9 @@ if not os.path.isdir('Output'):
     
 if not os.path.isdir('Output/Basis'):
     os.makedirs('Output/Basis')
+    
+if not os.path.isdir('Output/Summary'):
+    os.makedirs('Output/Summary')
     
 if not os.path.isdir('Output/FF'):
     os.makedirs('Output/FF')
@@ -136,12 +142,12 @@ spi = get_spi()
 
 """Swiss Performance Index"""
 #Price Constituents
-price_spi_cons = spi[0] 
-price_spi_cons.index = pd.to_datetime(price_spi_cons.index)
-index =  price_spi_cons.index
+price_spi_cons_fix = spi[0] 
+price_spi_cons_fix.index = pd.to_datetime(price_spi_cons_fix.index)
+index =  price_spi_cons_fix.index
 
 #Compute the returns
-returns_spi_cons = (price_spi_cons/price_spi_cons.shift(1) - 1) #.replace(np.nan, 0)
+returns_spi_cons = (price_spi_cons_fix/price_spi_cons_fix.shift(1) - 1) #.replace(np.nan, 0)
 returns_spi_cons.loc['2000-01-01'] = 0
 returns_spi_cons = returns_spi_cons.replace([np.inf, -np.inf], 0)
 
@@ -152,16 +158,16 @@ cov_spi_cons = returns_spi_cons.cov()
 roll_vol_spi_cons = returns_spi_cons.rolling(12).std()
 
 """Load the fundamental data"""
-pe_spi_cons = spi[1] # PE ratios for all constituents
-dividend_spi_cons = spi[2] # Dividend Yield for all consistuents
-mktcap_spi_cons = spi[3] # Market cap for all consituents
-beta_spi_cons = spi[4] # Beta of all constituents
-vol_spi_cons = spi[5] # Volatility of all constituents
-roe_spi_cons = spi[6] # ROE of all constituents
-roa_spi_cons = spi[7] # ROA of all constituents
-gm_spi_cons = spi[8] # Gross Margin of all constituents
-eps_spi_cons = spi[9] #EPS of all constituents
-trade_spi_cons = spi[10] #Volume traded of all constituents
+pe_spi_cons_fix = spi[1] # PE ratios for all constituents
+dividend_spi_cons_fix = spi[2] # Dividend Yield for all consistuents
+mktcap_spi_cons_fix = spi[3] # Market cap for all consituents
+beta_spi_cons_fix = spi[4] # Beta of all constituents
+vol_spi_cons_fix = spi[5] # Volatility of all constituents
+roe_spi_cons_fix = spi[6] # ROE of all constituents
+roa_spi_cons_fix = spi[7] # ROA of all constituents
+gm_spi_cons_fix = spi[8] # Gross Margin of all constituents
+eps_spi_cons_fix = spi[9] #EPS of all constituents
+trade_spi_cons_fix = spi[10] #Volume traded of all constituents
 industry_spi_cons = spi[11] #Industry of all constituents
 mb_spi_cons = spi[12] #Market-to-book ratio of all constituents
 investment_spi_cons = spi[13] #Investments of all constituents
@@ -244,6 +250,8 @@ macro_data = pd.concat([macro_data_df, libor3M_US, libor12M_US], axis=1).dropna(
 # Lag the Macro Data
 macro_data = macro_data.shift(3) 
 
+macro_data.describe().round(2).to_latex('Output/Summary/macro_summary.tex', column_format = 'lcccccc', multicolumn_format='c')
+
 # =============================================================================
 # =============================================================================
 # 2) Create a Cap-Weighted Benchmark
@@ -251,7 +259,7 @@ macro_data = macro_data.shift(3)
 # =============================================================================
 
 """Cap-Weighted Benchmark"""
-cw_spi_cons = mktcap_spi_cons.divide(mktcap_spi_cons.sum(axis=1), axis='index')
+cw_spi_cons = mktcap_spi_cons_fix.divide(mktcap_spi_cons_fix.sum(axis=1), axis='index')
 cw_spi_cons.index = pd.to_datetime(cw_spi_cons.index)
 
 cw_spi_index = (cw_spi_cons*returns_spi_cons).sum(axis=1)
@@ -275,27 +283,27 @@ perf_cwbenchmark.to_latex('Output/Basis/perf_cwbenchmark_basis.tex', column_form
 """Trade Only Liquid Equities"""
 def liqudity_constraint(quantile):
     
-    trade_liq = pd.DataFrame(np.zeros(price_spi_cons.shape), columns = price_spi_cons.columns, index = price_spi_cons.index)
+    trade_liq_l = pd.DataFrame(np.zeros(price_spi_cons_fix.shape), columns = price_spi_cons_fix.columns, index = price_spi_cons_fix.index)
     
-    trade_liq_quantile = trade_spi_cons.quantile(quantile, axis=1)
+    trade_liq_quantile = trade_spi_cons_fix.quantile(quantile, axis=1)
     
-    for i in trade_liq.columns:
-        trade_liq.loc[trade_spi_cons[i] >= trade_liq_quantile, i] = 1
+    for i in trade_liq_l.columns:
+        trade_liq_l.loc[trade_spi_cons_fix[i] >= trade_liq_quantile, i] = 1
         
-    trade_liq = trade_liq.replace(0, np.nan)
+    trade_liq_l = trade_liq_l.replace(0, np.nan)
     
-    price_spi_cons_l = (price_spi_cons*trade_liq)
-    pe_spi_cons_l = (pe_spi_cons*trade_liq)
-    dividend_spi_cons_l = (dividend_spi_cons*trade_liq)
-    mktcap_spi_cons_l = (mktcap_spi_cons*trade_liq)
-    beta_spi_cons_l = (beta_spi_cons*trade_liq)
-    vol_spi_cons_l = (vol_spi_cons*trade_liq)
-    roe_spi_cons_l = (roe_spi_cons*trade_liq)
-    roa_spi_cons_l = (roa_spi_cons*trade_liq)
-    gm_spi_cons_l = (gm_spi_cons*trade_liq)
-    eps_spi_cons_l = (eps_spi_cons*trade_liq)
+    price_spi_cons_l = (price_spi_cons_fix*trade_liq_l)
+    pe_spi_cons_l = (pe_spi_cons_fix*trade_liq_l)
+    dividend_spi_cons_l = (dividend_spi_cons_fix*trade_liq_l)
+    mktcap_spi_cons_l = (mktcap_spi_cons_fix*trade_liq_l)
+    beta_spi_cons_l = (beta_spi_cons_fix*trade_liq_l)
+    vol_spi_cons_l = (vol_spi_cons_fix*trade_liq_l)
+    roe_spi_cons_l = (roe_spi_cons_fix*trade_liq_l)
+    roa_spi_cons_l = (roa_spi_cons_fix*trade_liq_l)
+    gm_spi_cons_l = (gm_spi_cons_fix*trade_liq_l)
+    eps_spi_cons_l = (eps_spi_cons_fix*trade_liq_l)
     
-    return (price_spi_cons_l, pe_spi_cons_l, dividend_spi_cons_l, mktcap_spi_cons_l, beta_spi_cons_l, vol_spi_cons_l, roe_spi_cons_l, roa_spi_cons_l, gm_spi_cons_l, eps_spi_cons_l, trade_liq)
+    return (price_spi_cons_l, pe_spi_cons_l, dividend_spi_cons_l, mktcap_spi_cons_l, beta_spi_cons_l, vol_spi_cons_l, roe_spi_cons_l, roa_spi_cons_l, gm_spi_cons_l, eps_spi_cons_l, trade_liq_l)
 
 price_spi_cons, pe_spi_cons, dividend_spi_cons, mktcap_spi_cons, beta_spi_cons, vol_spi_cons, roe_spi_con, roa_spi_con, gm_spi_cons, eps_spi_cons, trade_liq = liqudity_constraint(0.25)
 
@@ -306,6 +314,8 @@ price_spi_cons, pe_spi_cons, dividend_spi_cons, mktcap_spi_cons, beta_spi_cons, 
 # =============================================================================
 
 def run_factor_building(quantile):
+    
+    global price_spi_cons, pe_spi_cons, dividend_spi_cons, mktcap_spi_cons, beta_spi_cons, vol_spi_cons, roe_spi_con, roa_spi_con, gm_spi_cons, eps_spi_cons, trade_liq
     
     """MOMENTUM (Price)"""
     returns_past12_mom = returns_spi_cons.rolling(12,closed='left').mean()*trade_liq #Include trade constraint
@@ -390,6 +400,12 @@ def run_factor_building(quantile):
 
 returns_factors, position_factors = run_factor_building(quantile = 0.5)
 
+plt.figure(figsize=(7,5))
+corr_factors = sns.heatmap(pd.concat([returns_factors[start_ptf:]], axis=1).corr(), annot=True)
+plt.savefig('Plot/Summary/factors_corr.png', dpi=400)
+plt.show()
+plt.close()
+
 # =============================================================================
 # =============================================================================
 # 5) Creation of the Strategies
@@ -453,7 +469,7 @@ plt.savefig('Plot/Weights/weights_momfactor_combineCW_basis.png', dpi=400, bbox_
 """Merge Results"""
 return_mom_factors = pd.DataFrame({'CW Benchmark': cw_spi_index})
 return_mom_factors['MF (No TE)'] = run_mom_factors_noTE[1]
-return_mom_factors['80% MF - 20% CW'] = run_mom_factors_combineCW[1]
+return_mom_factors['80% MF, 20% CW'] = run_mom_factors_combineCW[1]
 return_mom_factors[start_ptf:].apply(cum_prod).plot(figsize=(10,7), colormap = 'Set1')
 plt.savefig('Plot/Basis/mom_factor_basis.png', dpi=400)
 
@@ -565,7 +581,7 @@ plt.savefig('Plot/Weights/weights_erc_combineCW_basis.png', dpi=400, bbox_inches
 return_erc = pd.DataFrame({'CW Benchmark': cw_spi_index})
 return_erc['ERC (No TE)'] = run_erc_noTE[1]
 return_erc['ERC (6% TE Target)'] = run_erc_checkTE[1]
-return_erc['80% ERC - 20% CW'] = run_erc_combineCW[1]
+return_erc['80% ERC, 20% CW'] = run_erc_combineCW[1]
 
 return_erc[start_ptf:].apply(cum_prod).plot(figsize=(10,7), colormap = 'Set1')
 plt.savefig('Plot/Basis/erc_basis.png', dpi=400)
@@ -666,7 +682,7 @@ plt.savefig('Plot/Weights/weights_ridge_checkTE_basis.png', dpi=400, bbox_inches
 """TE Monitor by Combining it with the CW Benchmark"""
 run_ridge_combineCW = run_ridge(returns_factors, position_factors, TE_target = 0, 
                                 TE_check = False, combine_CW_weight = 0.80, combine_CW = True, 
-                                name = "80% Ridge, 20%")
+                                name = "80% Ridge, 20% CW")
 return_ridge_combineCW = run_ridge_combineCW[1]
 
 ## Evolution of Weigths
@@ -678,7 +694,7 @@ plt.savefig('Plot/Weights/weights_ridge_combineCW_basis.png', dpi=400, bbox_inch
 return_ridge = pd.DataFrame({'CW Benchmark': cw_spi_index})
 return_ridge['Ridge (No TE)'] = run_ridge_noTE[1]
 return_ridge['Ridge (6% TE Target)'] = run_ridge_checkTE[1]
-return_ridge['80% Ridge - 20% CW'] = run_ridge_combineCW[1]
+return_ridge['80% Ridge, 20% CW'] = run_ridge_combineCW[1]
 
 return_ridge[start_ptf:].apply(cum_prod).plot(figsize=(10,7), colormap = 'Set1')
 plt.savefig('Plot/Basis/ridge_basis.png', dpi=400)
@@ -804,8 +820,8 @@ plt.savefig('Plot/Weights/weights_parametrics_vix_combineCW_basis.png', dpi=400,
 """Merge Results"""
 # VIX
 return_parametrics_vix = pd.DataFrame({'CW Benchmark': cw_spi_index})
-return_parametrics_vix['Parametrics - (No TE)'] = run_parametrics_noTE_dict['VIX'][1]
-return_parametrics_vix['80% Parametrics - 20% CW'] = run_parametrics_combineCW_dict['VIX'][1]
+return_parametrics_vix['Parametrics (No TE)'] = run_parametrics_noTE_dict['VIX'][1]
+return_parametrics_vix['80% Parametrics, 20% CW'] = run_parametrics_combineCW_dict['VIX'][1]
 return_parametrics_vix[start_ptf:].apply(cum_prod).plot(figsize=(10,7), colormap = 'Set1')
 plt.savefig('Plot/Basis/parametrics_vix_basis.png', dpi=400)
 
@@ -814,8 +830,8 @@ perf_parametrics_vix.to_latex('Output/Basis/parametrics_vix_basis.tex', column_f
 
 # All Macro
 return_parametrics_allmacro = pd.DataFrame({'CW Benchmark': cw_spi_index})
-return_parametrics_allmacro['Parametrics - (No TE)'] = run_parametrics_noTE_dict['All Macro Data'][1]
-return_parametrics_allmacro['80% Parametrics - 20% CW'] = run_parametrics_combineCW_dict['All Macro Data'][1]
+return_parametrics_allmacro['Parametrics (No TE)'] = run_parametrics_noTE_dict['All Macro Data'][1]
+return_parametrics_allmacro['80% Parametrics, 20% CW'] = run_parametrics_combineCW_dict['All Macro Data'][1]
 return_parametrics_allmacro[start_ptf:].apply(cum_prod).plot(figsize=(10,7), colormap = 'Set1')
 plt.savefig('Plot/Basis/parametrics_allmacro_basis.png', dpi=400)
 
@@ -1304,9 +1320,8 @@ list_return_parametrics_noTE = [cw_spi_index]
 list_return_parametrics_combineCW = [cw_spi_index]
 list_perf_parametrics = []
 
-price_spi_cons, pe_spi_cons, dividend_spi_cons, mktcap_spi_cons, beta_spi_cons, vol_spi_cons, roe_spi_con, roa_spi_con, gm_spi_cons, eps_spi_cons, trade_liq = liqudity_constraint(0.25)
-
 for k in [0.2, 0.3, 0.4, 0.6]:
+    price_spi_cons, pe_spi_cons, dividend_spi_cons, mktcap_spi_cons, beta_spi_cons, vol_spi_cons, roe_spi_con, roa_spi_con, gm_spi_cons, eps_spi_cons, trade_liq = liqudity_constraint(0.25)
     returns_factors, position_factors = run_factor_building(quantile = k)
     
     ### Momentum of Factor ###
@@ -1400,7 +1415,7 @@ return_mom_factors_combineCW_fsensitivity = pd.DataFrame(list_return_mom_factors
 return_mom_factors_combineCW_fsensitivity[start_ptf:].apply(cum_prod).plot(figsize=(10,7), colormap = 'Set1')
 plt.savefig('Plot/Sensitivity/FactorQuantile/return_mom_factors_combineCW_fsentivity.png', dpi=400)
 
-perf_mom_factors_fsensitivity = pd.DataFrame(list_perf_mom_factors , index=mux_fsensitivity, columns=perf_cwbenchmark.index).T
+perf_mom_factors_fsensitivity = pd.DataFrame(list_perf_mom_factors, index=mux_fsensitivity, columns=perf_cwbenchmark.index).T
 perf_mom_factors_fsensitivity.to_latex('Output/Sensitivity/FactorQuantile/perf_mom_factors_fsentivity.tex', column_format = 'lcccccccc', multicolumn_format='c')
 
 """ERC"""
@@ -1532,13 +1547,129 @@ perf_parametrics_cwsentivity.to_latex('Output/Sensitivity/CW/perf_parametrics_cw
 # =============================================================================
 # =============================================================================
 
-# perf_merged = pd.concat([perf_erc, perf_ridge, perf_parametric, perf_cwbenchmark], axis=1)
+# =============================================================================
+# 8.0) Overview
+# =============================================================================
 
-# df_dash = pd.DataFrame({'ERC': cum_prod(erc_returns[start_ptf:]), 'Ridge': cum_prod(ridge_returns[start_ptf:]), 
-#                         'Parametrics': cum_prod(parametric_returns[start_ptf:]), 'CW Benchmark': cum_prod(cw_spi_index[start_ptf:])}).dropna()
-# df_dash.index.name = 'Date'
-# df_dash.to_csv('dash-financial-report/data/perf_ptf.csv')
+"""All basis portfolio returns"""
+dash_returns_all = pd.DataFrame({'Benchmark': cw_spi_index[start_ptf:'2021-09-01']})
+dash_returns_all['Dynamic Portfolio'] = run_mom_factors_noTE[1][start_ptf:'2021-09-01']
+dash_returns_all['Defensive Portfolio'] = run_ridge_noTE[1][start_ptf:'2021-09-01']
+dash_returns_all['Balanced Portfolio'] = run_parametrics_noTE_dict['VIX'][1][start_ptf:'2021-09-01']
+dash_returns_all.index.name = 'Date'
 
-# test = pd.read_csv('dash-financial-report/data/perf_ptf.csv')
+dash_returns_all.apply(cum_prod).to_csv('dash-financial-report/data/returns_all_ptf.csv')
+
+"""Performance Table"""
+dash_perf_all_basis = pd.concat([perf_cwbenchmark.iloc[0:3, 0:1], run_ridge_noTE[2].iloc[0:3, 0:1], 
+                                   run_parametrics_noTE_dict['VIX'][2].iloc[0:3, 0:1], run_mom_factors_noTE[2].iloc[0:3, 0:1]], axis=1)
+
+dash_perf_all_label = [] 
+dash_perf_all_label.insert(0, {'CW': 'Benchmark', 'Ridge (No TE)': 'Defensive', 'Parametrics (No TE)': 'Balanced', 'MF (No TE)': 'Dynamic'})
+
+dash_perf_all_basis = pd.concat([pd.DataFrame(dash_perf_all_label, index={''}), dash_perf_all_basis])
+dash_perf_all_basis.to_csv('dash-financial-report/data/perf_all_basis.csv')
+
+# =============================================================================
+# 8.1) Defensive Portfolio
+# =============================================================================
+
+"""Performance Table"""
+dash_perf_ridge_basis = pd.concat([perf_cwbenchmark, run_ridge_noTE[2], run_ridge_combineCW[2]], axis=1)
+
+dash_perf_ridge_label = [] 
+dash_perf_ridge_label.insert(0, {'CW': 'Benchmark', 'Ridge (No TE)': '100% Portfolio', '80% Ridge, 20% CW': '80% Portfolio, 20% Benchmark'})
+
+dash_perf_ridge_basis = pd.concat([pd.DataFrame(dash_perf_ridge_label, index={''}), dash_perf_ridge_basis])
+#dash_perf_ridge_basis.index.name = 'index'
+dash_perf_ridge_basis.to_csv('dash-financial-report/data/perf_ridge_basis.csv')
+
+"""Average Factor Weights"""
+dash_avg_weights_ridge = run_ridge_noTE[0][start_ptf:].mean().round(3)*100
+dash_avg_weights_ridge.to_csv('dash-financial-report/data/weights_ridge_basis.csv')
+
+"""Cumulative Stock Returns"""
+dash_return_ridge = return_ridge[start_ptf:].copy()
+dash_return_ridge.drop('Ridge (6% TE Target)', axis=1, inplace=True)
+dash_return_ridge.rename(columns={'CW Benchmark': 'Benchmark', 'Ridge (No TE)': '100% Portfolio', '80% Ridge, 20% CW': '80% Portfolio, 20% Benchmark'}, inplace=True)
+dash_return_ridge.index.name = 'Date'
+dash_return_ridge.apply(cum_prod).to_csv('dash-financial-report/data/returns_ridge.csv')
+
+dash_avg_returns_ridge = pd.concat([avg_returns(dash_return_ridge['Benchmark']), 
+                                    avg_returns(dash_return_ridge['100% Portfolio']),
+                                    avg_returns(dash_return_ridge['80% Portfolio, 20% Benchmark'])], axis=0)
+
+dash_avg_returns_ridge_label = [] 
+dash_avg_returns_ridge_label.insert(0, {'1 Year': '1 Year', '3 Years': '3 Years', '5 Years': '5 Years', '10 Years': '10 Years', 'Since Inception': 'Since Inception'})
+
+dash_avg_returns_ridge = pd.concat([pd.DataFrame(dash_avg_returns_ridge_label, index={''}), dash_avg_returns_ridge])
+dash_avg_returns_ridge.to_csv('dash-financial-report/data/avg_returns_ridge.csv')
+
+# =============================================================================
+# 8.2) Balanced Portfolio
+# =============================================================================
+
+"""Performance Table"""
+dash_perf_parametrics_basis = pd.concat([perf_cwbenchmark, run_parametrics_noTE_dict['VIX'][2], run_parametrics_combineCW_dict['VIX'][2]], axis=1)
+
+dash_perf_parametrics_label = [] 
+dash_perf_parametrics_label.insert(0, {'CW': 'Benchmark', 'Parametrics (No TE)': '100% Portfolio', '80% Parametrics, 20%': '80% Portfolio, 20% Benchmark'})
+
+dash_perf_parametrics_basis = pd.concat([pd.DataFrame(dash_perf_parametrics_label, index={''}), dash_perf_parametrics_basis])
+dash_perf_parametrics_basis.to_csv('dash-financial-report/data/perf_parametrics_basis.csv')
+
+"""Average Factor Weights"""
+dash_avg_weights_parametrics = (run_parametrics_noTE_dict['VIX'][0][start_ptf:].mean()*100).round(2)
+dash_avg_weights_parametrics.to_csv('dash-financial-report/data/weights_parametrics_basis.csv')
+
+"""Cumulative Stock Returns"""
+dash_return_parametrics = return_parametrics_vix[start_ptf:].copy()
+dash_return_parametrics.rename(columns={'CW Benchmark': 'Benchmark', 'Parametrics (No TE)': '100% Portfolio', '80% Parametrics, 20% CW': '80% Portfolio, 20% Benchmark'}, inplace=True)
+dash_return_parametrics.index.name = 'Date'
+dash_return_parametrics.apply(cum_prod).to_csv('dash-financial-report/data/returns_parametrics.csv')
+
+dash_avg_returns_parametrics  = pd.concat([avg_returns(dash_return_parametrics['Benchmark']), 
+                                    avg_returns(dash_return_parametrics['100% Portfolio']),
+                                    avg_returns(dash_return_parametrics['80% Portfolio, 20% Benchmark'])], axis=0)
+
+dash_avg_returns_parametrics_label = [] 
+dash_avg_returns_parametrics_label.insert(0, {'1 Year': '1 Year', '3 Years': '3 Years', '5 Years': '5 Years', '10 Years': '10 Years', 'Since Inception': 'Since Inception'})
+
+dash_avg_returns_parametrics = pd.concat([pd.DataFrame(dash_avg_returns_parametrics_label, index={''}), dash_avg_returns_parametrics])
+dash_avg_returns_parametrics.to_csv('dash-financial-report/data/avg_returns_parametrics.csv')
+
+# =============================================================================
+# 8.3) Dynamic Portfolio
+# =============================================================================
+
+"""Performance Table"""
+dash_perf_mom_factors_basis = pd.concat([perf_cwbenchmark, run_mom_factors_noTE[2], run_mom_factors_combineCW[2]], axis=1)
+
+dash_perf_mom_factors_label = [] 
+dash_perf_mom_factors_label.insert(0, {'CW': 'Benchmark', 'MF (No TE)': '100% Portfolio', '80% MF, 20% CW': '80% Portfolio, 20% Benchmark'})
+
+dash_perf_mom_factors_basis = pd.concat([pd.DataFrame(dash_perf_mom_factors_label, index={''}), dash_perf_mom_factors_basis])
+dash_perf_mom_factors_basis.to_csv('dash-financial-report/data/perf_mom_factors_basis.csv')
+
+"""Average Factor Weights"""
+dash_avg_weights_mom_factors = (run_mom_factors_noTE[0][start_ptf:].mean()*100).round(2)
+dash_avg_weights_mom_factors.to_csv('dash-financial-report/data/weights_mom_factors_basis.csv')
+
+"""Cumulative Stock Returns"""
+dash_return_mom_factors = return_mom_factors[start_ptf:].copy()
+dash_return_mom_factors.rename(columns={'CW Benchmark': 'Benchmark', 'MF (No TE)': '100% Portfolio', '80% MF, 20% CW': '80% Portfolio, 20% Benchmark'}, inplace=True)
+dash_return_mom_factors.index.name = 'Date'
+dash_return_mom_factors.apply(cum_prod).to_csv('dash-financial-report/data/returns_mom_factors.csv')
+
+dash_avg_returns_mom_factors = pd.concat([avg_returns(dash_return_mom_factors['Benchmark']), 
+                                    avg_returns(dash_return_mom_factors['100% Portfolio']),
+                                    avg_returns(dash_return_mom_factors['80% Portfolio, 20% Benchmark'])], axis=0)
+
+dash_avg_returns_mom_factors_label = [] 
+dash_avg_returns_mom_factors_label.insert(0, {'1 Year': '1 Year', '3 Years': '3 Years', '5 Years': '5 Years', '10 Years': '10 Years', 'Since Inception': 'Since Inception'})
+
+dash_avg_returns_mom_factors = pd.concat([pd.DataFrame(dash_avg_returns_mom_factors_label, index={''}), dash_avg_returns_mom_factors])
+dash_avg_returns_mom_factors.to_csv('dash-financial-report/data/avg_returns_mom_factors.csv')
+
 
 
