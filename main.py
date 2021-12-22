@@ -223,14 +223,14 @@ returns_spi = price_spi_index / price_spi_index.shift(1) - 1
 
 This section aims to collect all necessary macro data to time the factors and 
 perform an analysis of the porfolio. We collected from the Federal Reserve of 
-Economic Data the following metrics:
+Economic Data the following metrics (monthly data):
     
-    - Long-Term Government Bond Yields: 10-year: Main (Including Benchmark) for Switzerland (Monthly)
+    - Long-Term Government Bond Yields: 10-year: Main (Including Benchmark) for Switzerland
     - Long-Term Government Bond Yields: 10-year: Main (Including Benchmark) for the United States
-    - CBOE Volatility Index: VIX (Daily)
-    - Consumer Price Index: All Items for Switzerland (Monthly)
-    - Consumer Price Index for All Urban Consumers: All Items in U.S. City Average (Monthly)
-    - TED rate spread between 3-Month LIBOR based on US dollars and 3-Month Treasury Bill (Daily)
+    - CBOE Volatility Index: VIX
+    - Consumer Price Index: All Items for Switzerland
+    - Consumer Price Index for All Urban Consumers: All Items in U.S. City Average
+    - TED rate spread between 3-Month LIBOR based on US dollars and 3-Month Treasury Bill
     - 3-Month London Interbank Offered Rate (LIBOR), based on U.S. Dollar
     - 12-Month London Interbank Offered Rate (LIBOR), based on U.S. Dollar
     - 1-Month London Interbank Offered Rate (LIBOR), based on Swiss Franc
