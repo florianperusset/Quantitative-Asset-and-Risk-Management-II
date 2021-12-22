@@ -1,0 +1,5 @@
+The dashboard infrastructure has been taken from the open-source repository of the Dash Library (https://github.com/plotly/dash-sample-apps/tree/main/apps/dash-financial-report). All data and plots  are taken from the results of the research conducted by Sebastien Gorgoni, Florian Perusset and Florian Vogt for the course Quantitative Asset and Risk Management at HEC Lausanne in Autumn 2021. 
+
+This publication is solely meant to be part of an informal project of the course Quantitative Asset & Risk Management II given in Autumn 2021 at  the University of Lausanne and is no way an offer or invitation to buy or sell investment or any other products. The information and opinions reflected in this document originate from reliable sources; nonetheless, we refuse and dismiss any contractual or implicit liability for incorrect or incomplete information, judgments or estimations. All information, opinions and numbers can be subject to change at any moment without advance notice.
+
+To run the dash, run the app.py file while making sure all other script are being included in the file.

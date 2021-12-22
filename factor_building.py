@@ -57,6 +57,25 @@ def factor_building(metric, quantile, long_above_quantile=True, ew_position=True
     return position_factor.iloc[12:]
 
 def run_ff_regression(returns_ptf, returns_ff, interest_rate):
+    """
+    This function will perform a Fama French analysis by running an 
+    OLS regression
+
+    Parameters
+    ----------
+    returns_ptf : DataFrame
+        Returns of the portfolio.
+    returns_ff : DataFrame
+        Returns of the FF factors.
+    interest_rate : FLoat
+        The risk free rate.
+
+    Returns
+    -------
+    DataFrame
+        The results of the OLS regression (coefficient, p-val, R2).
+
+    """
     
     excess_returns = returns_ptf - interest_rate
     

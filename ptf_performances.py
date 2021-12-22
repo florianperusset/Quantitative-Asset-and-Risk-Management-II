@@ -229,6 +229,21 @@ def perf(returns_ptf, returns_benchmark, rf, name):
     return df.round(3)
 
 def avg_returns(returns):
+    """
+    This function compute the 1Y, 3Y, 5Y, 10Y and since inception annualized 
+    returns of the portfolio. The results are shown on the dashboard
+
+    Parameters
+    ----------
+    returns : DataFrame
+        Retunrs of the porfolio.
+
+    Returns
+    -------
+    df : DataFrame
+        Annualized returns at different time horizon.
+
+    """
     
     avg_1y = returns.iloc[-12:].mean()*12
     avg_3y = returns.iloc[-12*3:].mean()*12

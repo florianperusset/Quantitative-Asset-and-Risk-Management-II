@@ -69,36 +69,8 @@ def get_spi():
 
     Returns
     -------
-    price_spi : TYPE
-        DESCRIPTION.
-    pe_spi : TYPE
-        DESCRIPTION.
-    dividend_spi : TYPE
-        DESCRIPTION.
-    mktcap_spi : TYPE
-        DESCRIPTION.
-    beta_spi : TYPE
-        DESCRIPTION.
-    vol_spi : TYPE
-        DESCRIPTION.
-    roe_spi : TYPE
-        DESCRIPTION.
-    roa_spi : TYPE
-        DESCRIPTION.
-    gm_spi : TYPE
-        DESCRIPTION.
-    eps_spi : TYPE
-        DESCRIPTION.
-    trade_spi : TYPE
-        DESCRIPTION.
-    industry_spi : TYPE
-        DESCRIPTION.
-    mb_spi : TYPE
-        DESCRIPTION.
-    investment_spi : TYPE
-        DESCRIPTION.
-    profit_spi : TYPE
-        DESCRIPTION.
+    It will return a set of necessary data to build porfolios in main.py
+    as a DataFrame.
 
     """
     

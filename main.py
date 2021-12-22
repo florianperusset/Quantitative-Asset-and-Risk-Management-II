@@ -138,6 +138,30 @@ if not os.path.isdir('Output/Sensitivity/CW'):
 # 1.1) Import the necessary data of the SPI constituents from Datastream 
 # =============================================================================
 
+"""
+This section aims to collect all data required to build the factors. We collected 
+(from Reuters Datastream) and processed the following metrics of the SPI:
+    
+    - Price
+    - Price-to-Earnings
+    - Dividend yield
+    - Market Cap
+    - Beta
+    - Volatility (unused)
+    - ROE (unused)
+    - ROA (unused)
+    - Gross Margin 
+    - EPS
+    - Volume traded
+    - Industry Classification
+    - Market-to-book 
+    - Investments
+    - Operating Profitability
+
+"""
+
+
+# Import and process all data required
 spi = get_spi()
 
 """Swiss Performance Index"""
@@ -147,7 +171,7 @@ price_spi_cons_fix.index = pd.to_datetime(price_spi_cons_fix.index)
 index =  price_spi_cons_fix.index
 
 #Compute the returns
-returns_spi_cons = (price_spi_cons_fix/price_spi_cons_fix.shift(1) - 1) #.replace(np.nan, 0)
+returns_spi_cons = (price_spi_cons_fix/price_spi_cons_fix.shift(1) - 1)
 returns_spi_cons.loc['2000-01-01'] = 0
 returns_spi_cons = returns_spi_cons.replace([np.inf, -np.inf], 0)
 
@@ -173,7 +197,15 @@ mb_spi_cons = spi[12] #Market-to-book ratio of all constituents
 investment_spi_cons = spi[13] #Investments of all constituents
 profit_spi_cons = spi[14] #Operating Profit Margin of all constituents
 
+# Count the number of each constituents in each industry type
+sns.histplot(industry_spi_cons, discrete=True, shrink=0.8, legend=False)
+plt.xticks(range(1,7), ['Industrial', 'Utility', 'Transporation', 'Bank', 'Insurance', 'Other Financial'], rotation=90)
+plt.savefig('Plot/Summary/industry.png', dpi=400, bbox_inches='tight')
+plt.show()
+plt.close()
+
 """Benchmark SPI"""
+# Collect the SPI
 price_spi_index = pd.read_excel("Data_SPI/SPI_DATA_ALL.xlsx", sheet_name='SPI Index')
 price_spi_index = price_spi_index.set_index('Date')
 price_spi_index = price_spi_index[(price_spi_index.index >= '2000-01-01')]
@@ -186,6 +218,24 @@ returns_spi = price_spi_index / price_spi_index.shift(1) - 1
 # =============================================================================
 #  1.2) Import the necessary macro data from FRED
 # =============================================================================
+
+"""
+
+This section aims to collect all necessary macro data to time the factors and 
+perform an analysis of the porfolio. We collected from the Federal Reserve of 
+Economic Data the following metrics:
+    
+    - Long-Term Government Bond Yields: 10-year: Main (Including Benchmark) for Switzerland (Monthly)
+    - Long-Term Government Bond Yields: 10-year: Main (Including Benchmark) for the United States
+    - CBOE Volatility Index: VIX (Daily)
+    - Consumer Price Index: All Items for Switzerland (Monthly)
+    - Consumer Price Index for All Urban Consumers: All Items in U.S. City Average (Monthly)
+    - TED rate spread between 3-Month LIBOR based on US dollars and 3-Month Treasury Bill (Daily)
+    - 3-Month London Interbank Offered Rate (LIBOR), based on U.S. Dollar
+    - 12-Month London Interbank Offered Rate (LIBOR), based on U.S. Dollar
+    - 1-Month London Interbank Offered Rate (LIBOR), based on Swiss Franc
+    
+"""
 
 """Macro Data"""
 fred = Fred(api_key='2fd4cf1862f877db032b4a6a3a5f1c77')
@@ -258,12 +308,21 @@ macro_data.describe().round(2).to_latex('Output/Summary/macro_summary.tex', colu
 # =============================================================================
 # =============================================================================
 
+"""
+
+This section aims to create a cap-weighted benchmark of our available assets,
+based on their market cap.
+
+"""
+
 """Cap-Weighted Benchmark"""
+# Build the CW benchmark
 cw_spi_cons = mktcap_spi_cons_fix.divide(mktcap_spi_cons_fix.sum(axis=1), axis='index')
 cw_spi_cons.index = pd.to_datetime(cw_spi_cons.index)
 
 cw_spi_index = (cw_spi_cons*returns_spi_cons).sum(axis=1)
 
+# Plot the cumulative performances of the CW benchmark
 plt.figure(figsize=(10,7))
 plt.plot(cum_prod(cw_spi_index[start_ptf:]), 'r', label='CW Benchmark')
 plt.legend(loc='upper left', frameon=True)
@@ -271,6 +330,7 @@ plt.savefig('Plot/Basis/cw_basis.png', dpi=400)
 plt.show()
 plt.close()
 
+# Determine the performances of the benchmark
 perf_cwbenchmark = perf(cw_spi_index[start_ptf:], cw_spi_index[start_ptf:], risk_free, 'CW')
 perf_cwbenchmark.to_latex('Output/Basis/perf_cwbenchmark_basis.tex', column_format = 'lc', multicolumn_format='c')
 
@@ -280,8 +340,32 @@ perf_cwbenchmark.to_latex('Output/Basis/perf_cwbenchmark_basis.tex', column_form
 # =============================================================================
 # =============================================================================
 
+"""
+
+In this section, we set a liquidity constraint in our swiss equities universe, as some
+small cap companies in the Swiss market tends to be illiquid, so we won't allocate them in 
+our portfolios.
+
+"""
+
+
 """Trade Only Liquid Equities"""
 def liqudity_constraint(quantile):
+    """
+    
+    This function sets a liquidity constraint to avoid trading illiquid
+    stocks. It is based on the monthly volume traded in the markets
+    
+    Parameters
+    ----------
+    quantile : Float
+        The quantile to set the liquidity constraint.
+
+    Returns
+    -------
+    It results all metrics required to build factors with a liquidity constraint.
+
+    """
     
     trade_liq_l = pd.DataFrame(np.zeros(price_spi_cons_fix.shape), columns = price_spi_cons_fix.columns, index = price_spi_cons_fix.index)
     
@@ -305,6 +389,7 @@ def liqudity_constraint(quantile):
     
     return (price_spi_cons_l, pe_spi_cons_l, dividend_spi_cons_l, mktcap_spi_cons_l, beta_spi_cons_l, vol_spi_cons_l, roe_spi_cons_l, roa_spi_cons_l, gm_spi_cons_l, eps_spi_cons_l, trade_liq_l)
 
+# Set the liquidity constraint
 price_spi_cons, pe_spi_cons, dividend_spi_cons, mktcap_spi_cons, beta_spi_cons, vol_spi_cons, roe_spi_con, roa_spi_con, gm_spi_cons, eps_spi_cons, trade_liq = liqudity_constraint(0.25)
 
 # =============================================================================
@@ -313,7 +398,42 @@ price_spi_cons, pe_spi_cons, dividend_spi_cons, mktcap_spi_cons, beta_spi_cons, 
 # =============================================================================
 # =============================================================================
 
+"""
+
+In this section, we create eight different factors to build our portfolios.
+
+"""
+
 def run_factor_building(quantile):
+    """
+    This function builds eight different factors to build our portfolios:
+        
+        - Momentum (built with 12-month average returns)
+        - Value (built with E/P)
+        - Size (built with Market Cap)
+        - Profitability (built with Gross Margin)
+        - Low Beta (built with beta)
+        - Low Volatility (built with the 12-month rolling volatility)
+        - Dividend (built with dividend yield)
+        - Quality Earning (built with EPS)
+        
+    In all these factors, we will take an EW position for all constituents with a 
+    metrics below/above a given quantile (depending on the factors)
+        
+
+    Parameters
+    ----------
+    quantile : Float
+        The quantile to build the factors.
+
+    Returns
+    -------
+    returns_factors : DataFrame
+        The returns of the factor.
+    position_factors : DataFrame
+        The weights of each constituents in a given factor.
+
+    """
     
     global price_spi_cons, pe_spi_cons, dividend_spi_cons, mktcap_spi_cons, beta_spi_cons, vol_spi_cons, roe_spi_con, roa_spi_con, gm_spi_cons, eps_spi_cons, trade_liq
     
@@ -398,11 +518,13 @@ def run_factor_building(quantile):
     
     return (returns_factors, position_factors)
 
+# Collect the returns and weight allocation of factors
 returns_factors, position_factors = run_factor_building(quantile = 0.5)
 
+# Plo the correlation among factors
 plt.figure(figsize=(7,5))
 corr_factors = sns.heatmap(pd.concat([returns_factors[start_ptf:]], axis=1).corr(), annot=True)
-plt.savefig('Plot/Summary/factors_corr.png', dpi=400)
+plt.savefig('Plot/Summary/factors_corr.png', dpi=400, bbox_inches='tight')
 plt.show()
 plt.close()
 
@@ -416,7 +538,47 @@ plt.close()
 # 5.1) Strategy 1: Momentum of Factors
 # =============================================================================
 
+"""
+
+This section with generate a portfolio of momentum of factors we created in the previous section.
+We will also provide performances measures
+
+"""
+
 def run_momentum_factors(returns_factors, position_factors, quantile, combine_CW_weight, combine_CW, name):
+    """
+    
+    This function will perform a momentum of factor in a similar fashion as the previous factor construction.
+    It also compute the performances of the strategy. To minimize the tracking-error, this function can 
+    also provide a combination with the benchmark to do so. This function will also be used for the sensitivity.
+    
+    Parameters
+    ----------
+    returns_factors : DataFrame
+        The returns of factors.
+    position_factors : DataFrame
+        The equities allocation among a factor.
+    quantile : Float
+       Quantile used to create the momentum of factor.
+    combine_CW_weight : Float
+        Weight allocated to the benchmark.
+    combine_CW : Bool
+        True if we want to combine the portfolio with the benchmark. False otherwise
+    name : Str
+        Name of strategy (and settings).
+
+    Returns
+    -------
+    weights_mom_factor : DataFrame
+        Weights between factors in the strategy.
+    returns_mom_factors : DataFrame
+        Returns of the strategy.
+    perf_mom_factors : Dataframe
+        Performance metrics of the strategy.
+    weights_spi_cons_mom_factor : DataFrame
+        Weights allocated among constituents.
+
+    """
     
     returns_factors_past12_mom = returns_factors.rolling(12, closed='left').mean().dropna()
     
@@ -480,7 +642,35 @@ perf_mom_factors.to_latex('Output/Basis/mom_factor_basis.tex', column_format = '
 # 5.2) Strategy 2: ERC of Factors
 # =============================================================================
 
+"""
+
+This section with generate a portfolio of equal-risk contribution among factors we created 
+in the previous section. We will also provide performances measures.
+
+"""
+
 def build_erc(returns_factors, position_factors, TE_target, check_TE=True):
+    """
+    This function computes the optimal weights based on an equal-risk contribution
+    among factors. 
+
+    Parameters
+    ----------
+    returns_factors : DataFrame
+        Returns of the factors.
+    position_factors : Dataframe
+        The equities allocation among a factor.
+    TE_target : Float
+        The TE to target.
+    check_TE : Bool
+        True if we want to minimize the TE in the optimization. False otherwise.
+
+    Returns
+    -------
+    weights_factors_erc : DataFrame
+        Portfolio weights among factors.
+
+    """
     
     ## Start the optimization
     x0 = np.zeros(len(returns_factors.columns))+0.01 # initial values
@@ -517,6 +707,40 @@ def build_erc(returns_factors, position_factors, TE_target, check_TE=True):
     return weights_factors_erc
 
 def run_erc(returns_factors, position_factors, TE_target, TE_check, combine_CW_weight, combine_CW, name):
+    """
+    This function run the optimization ERC model. It also compute the performances of the strategy. 
+    To minimize the tracking-error, this function can also provide a combination with the benchmark to do so. 
+    This function will also be used for the sensitivity.
+
+    Parameters
+    ----------
+    returns_factors : DataFrame
+       Returns of the factors.
+    position_factors : TYPE
+        DESCRIPTION.
+    TE_target : DataFrame
+        The equities allocation among a factor.
+    TE_check : Bool
+        True if we want to minimize the TE in the optimization. False otherwise.
+    combine_CW_weight : Float
+        Weight allocated to the benchmark.
+    combine_CW : Bool
+        True if we want to combine the portfolio with the benchmark. False otherwise.
+    name : Str
+        Name of the stategy.
+
+    Returns
+    -------
+    weights_factors_erc : DataFrame
+        Portfolio weights among factors.
+    erc_returns : DataFrame
+        Returns of the strategy.
+    perf_erc : DataFrame
+        Performances of the strategy.
+    weights_spi_cons_erc : Dataframe
+        Equities allocation within the strategy.
+
+    """
     
     weights_factors_erc = build_erc(returns_factors, position_factors, TE_target, TE_check)
     
@@ -595,7 +819,35 @@ perf_erc_basis.to_latex('Output/Basis/perf_erc_basis.tex', column_format = 'lccc
 # 5.3) Strategy 3: Ridge Regression of Factors
 # =============================================================================
 
+"""
+
+This section with generate a portfolio using a ridge regression among factors we created 
+in the previous section. We will also provide performances measures.
+
+"""
+
 def build_ridge(returns_factors, position_factors, TE_target, check_TE=True):
+    """
+    This function computes the optimal weights based on a ridge regression
+    among factors. 
+
+    Parameters
+    ----------
+    returns_factors : DataFrame
+        Returns of the factors.
+    position_factors : Dataframe
+        The equities allocation among a factor.
+    TE_target : Float
+        The TE to target.
+    check_TE : Bool
+        True if we want to minimize the TE in the optimization. False otherwise.
+
+    Returns
+    -------
+    ridge_weights_factors : DataFrame
+        Portfolio weights among factors.
+
+    """
     
     x0 = np.zeros(len(returns_factors.columns))+0.01
     
@@ -630,6 +882,40 @@ def build_ridge(returns_factors, position_factors, TE_target, check_TE=True):
     return ridge_weights_factors
 
 def run_ridge(returns_factors, position_factors, TE_target, TE_check, combine_CW_weight, combine_CW, name):
+    """
+    This function run the optimization ridge regressiion model. It also compute the performances of the strategy. 
+    To minimize the tracking-error, this function can also provide a combination with the benchmark to do so. 
+    This function will also be used for the sensitivity.
+
+    Parameters
+    ----------
+    returns_factors : DataFrame
+       Returns of the factors.
+    position_factors : TYPE
+        DESCRIPTION.
+    TE_target : DataFrame
+        The equities allocation among a factor.
+    TE_check : Bool
+        True if we want to minimize the TE in the optimization. False otherwise.
+    combine_CW_weight : Float
+        Weight allocated to the benchmark.
+    combine_CW : Bool
+        True if we want to combine the portfolio with the benchmark. False otherwise.
+    name : Str
+        Name of the stategy.
+
+    Returns
+    -------
+    ridge_weights_factors : DataFrame
+        Portfolio weights among factors.
+    ridge_returns : DataFrame
+        Returns of the strategy.
+    perf_ridge : DataFrame
+        Performances of the strategy.
+    weights_spi_cons_ridge : Dataframe
+        Equities allocation within the strategy.
+
+    """
 
     ridge_weights_factors = build_ridge(returns_factors, position_factors, TE_target, TE_check)
     
@@ -707,8 +993,36 @@ perf_ridge_basis.to_latex('Output/Basis/perf_ridge_basis.tex', column_format = '
 # 5.4) Strategy 4: Parametrics using Macro Data (Factor Timing)
 # =============================================================================
 
+"""
+
+This section with generate a portfolio using a parametric weights model among factors we created 
+in the previous section, using macro data as explanatory variables. We will also provide performances measures.
+
+"""
+
+
 """PARAMETRIC WEIGHTS WITH ALL MACRO VARIABLES"""
 def build_parametrics(returns_factors, select_macro_data):
+    """
+
+    This function computes the optimal weights among factors based on a parametric weights model,
+    using macro data as the explanatory variable to time the factors.
+    
+    Parameters
+    ----------
+    returns_factors : DataFrame
+        Returns of the factors.
+    select_macro_data : DataFrame
+        Macro data to parametrize the weights.
+
+    Returns
+    -------
+    conditional_weights_factors : DataFrame
+        Factor allocation of the strategy.
+    returns_factors_parametric : DataFrame
+        Returns of the strategy.
+
+    """
     
     returns_factors_parametric = returns_factors.iloc[:-1].copy()
     macro_variables_parametric = macro_data.loc['2001-01-01':, select_macro_data].copy() #keep as a dataframe and not series: macro_data.iloc[10:, 1:2].copy()
@@ -743,6 +1057,39 @@ def build_parametrics(returns_factors, select_macro_data):
     return (conditional_weights_factors, returns_factors_parametric)
 
 def run_parametrics(returns_factors, position_factors, select_macro_data, combine_CW_weight, combine_CW, name):
+    """
+    This function run the parametric weights model with a given set of macro data. It also compute the performances of the strategy. 
+    To minimize the tracking-error, this function can also provide a combination with the benchmark to do so. 
+    This function will also be used for the sensitivity.   
+    
+    Parameters
+    ----------
+    returns_factors : DataFrame
+       Returns of the factors.
+    position_factors : DataFrame
+        DESCRIPTION.
+    select_macro_data : Str
+        Select the set of macro data for the model.
+    combine_CW_weight : Float
+        Weight allocated to the benchmark.
+    combine_CW : Bool
+        True if we want to combine the portfolio with the benchmark. False otherwise.
+    name : Str
+        Name of the stategy.
+
+    Returns
+    -------
+    conditional_weights_factors : DataFrame
+        Portfolio weights among factors.
+    parametric_returns : DataFrame
+        Returns of the strategy.
+    perf_parametric : DataFrame
+        Performances of the strategy.
+    weights_spi_cons_parametrics : Dataframe
+        Equities allocation within the strategy.
+
+
+    """
     
     conditional_weights_factors, returns_factors_parametric = build_parametrics(returns_factors, select_macro_data)
     
@@ -839,6 +1186,13 @@ return_parametrics_allmacro = pd.concat([perf_cwbenchmark, run_parametrics_noTE_
                                   run_parametrics_combineCW_dict['All Macro Data'][2]], axis=1)
 return_parametrics_allmacro.to_latex('Output/Basis/parametrics_allmacro_basis.tex', column_format = 'lccc', multicolumn_format='c')
 
+# All Factor Weights Merged
+avg_weight_merged = pd.DataFrame({'Mom Factor': (run_mom_factors_noTE[0][start_ptf:].mean()*100).round(2),
+                                  'ERC': (run_erc_noTE[0][start_ptf:].mean()*100).round(2),
+                                  'Ridge': (run_ridge_noTE[0][start_ptf:].mean()*100).round(2),
+                                  'Parametrics': (run_parametrics_noTE_dict['VIX'][0][start_ptf:].mean()*100).round(2)})
+avg_weight_merged.to_latex('Output/Summary/avg_weights_merged.tex', column_format = 'lcccc', multicolumn_format='c')
+
 # =============================================================================
 # =============================================================================
 # 6) Fama-French Factor Analysis
@@ -848,6 +1202,18 @@ return_parametrics_allmacro.to_latex('Output/Basis/parametrics_allmacro_basis.te
 # =============================================================================
 # 6.1) Creation of the FF Factors in the Swiss Market (SPI Constitutents)
 # =============================================================================
+
+"""
+
+This section aims to provide a Fama-French analysis of our portfolios to determine its 
+exposure to various factors. 
+
+The factors have been created using a similar methodology described on the website of Kenneth R. French:
+https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/data_library.html
+
+"""
+
+# Get the necessary data without constraints
 
 price_spi_cons = spi[0] # Price of all constituents
 pe_spi_cons = spi[1] # PE ratios for all constituents
@@ -871,6 +1237,9 @@ excess_return_market = returns_spi['SPI INDEX'] - libor1M_CHF['1M Libor CHF']/10
 
 """SMB Factor"""
 def SMB_bm():
+    """
+    Small-minus-big factor based on book-to-market ratio.
+    """
     position_small = factor_building(mktcap_spi_cons, quantile=0.5, long_above_quantile=False, ew_position=False).replace(0, np.nan)
     position_small_value = factor_building((bm_spi_cons*position_small), quantile=0.75, long_above_quantile=True, ew_position=False)
     position_small_growth = factor_building((bm_spi_cons*position_small), quantile=0.25, long_above_quantile=False, ew_position=False)
@@ -892,6 +1261,10 @@ def SMB_bm():
 smb_bm = SMB_bm()
 
 def SMB_op():
+    """
+    Small-minus-big factor based on operating profitability.
+
+    """
     position_small = factor_building(mktcap_spi_cons, quantile=0.5, long_above_quantile=False, ew_position=False).replace(0, np.nan)
     position_small_robust = factor_building((profit_spi_cons*position_small), quantile=0.75, long_above_quantile=True, ew_position=False)
     position_small_weak = factor_building((profit_spi_cons*position_small), quantile=0.25, long_above_quantile=False, ew_position=False)
@@ -911,6 +1284,10 @@ def SMB_op():
     return smb_op
 
 def SMB_inv():
+    """
+    Small-minus-big factor based on investment of the company.
+
+    """
     position_small = factor_building(mktcap_spi_cons, quantile=0.5, long_above_quantile=False, ew_position=False).replace(0, np.nan)
     position_small_aggressive = factor_building((investment_spi_cons*position_small), quantile=0.55, long_above_quantile=True, ew_position=False)
     position_small_conservative = factor_building((investment_spi_cons*position_small), quantile=0.45, long_above_quantile=False, ew_position=False)
@@ -933,6 +1310,10 @@ smb = (SMB_bm() + SMB_op() + SMB_inv())/3
 
 """HML Factor"""
 def HML():
+    """
+    High-minus-low factor based on the book-to-market ratio
+
+    """
     position_small = factor_building(mktcap_spi_cons, quantile=0.5, long_above_quantile=False, ew_position=False).replace(0, np.nan)
     position_small_value = factor_building((bm_spi_cons*position_small), quantile=0.75, long_above_quantile=True, ew_position=False)
     position_small_growth = factor_building((bm_spi_cons*position_small), quantile=0.25, long_above_quantile=False, ew_position=False)
@@ -955,6 +1336,9 @@ hml = HML()
 
 """WML Factor"""
 def WML():
+    """
+    Winner-minus-loser based on the past 12-month average returns.
+    """
     position_small = factor_building(mktcap_spi_cons, quantile=0.5, long_above_quantile=False, ew_position=False).replace(0, np.nan)
     position_small_high = factor_building(returns_past12*position_small, quantile=0.75, long_above_quantile=True, ew_position=False)
     position_small_low = factor_building(returns_past12*position_small, quantile=0.25, long_above_quantile=False, ew_position=False)
@@ -977,6 +1361,10 @@ wml = WML()
 
 """RMW Factor"""
 def RMW():
+    """
+    Robust-minus-weak factor based on the operating profitability. 
+
+    """
     position_small = factor_building(mktcap_spi_cons, quantile=0.5, long_above_quantile=False, ew_position=False).replace(0, np.nan)
     position_small_robust = factor_building((profit_spi_cons*position_small), quantile=0.75, long_above_quantile=True, ew_position=False)
     position_small_weak = factor_building((profit_spi_cons*position_small), quantile=0.25, long_above_quantile=False, ew_position=False)
@@ -999,6 +1387,10 @@ rmw = RMW()
 
 """CMA Factor"""
 def CMA():
+    """
+    Conservative-minus-aggressive factor based on the investments of the firms.
+
+    """
     position_small = factor_building(mktcap_spi_cons, quantile=0.5, long_above_quantile=False, ew_position=False).replace(0, np.nan)
     position_small_aggressive = factor_building((investment_spi_cons*position_small), quantile=0.55, long_above_quantile=True, ew_position=False)
     position_small_conservative = factor_building((investment_spi_cons*position_small), quantile=0.45, long_above_quantile=False, ew_position=False)
@@ -1021,6 +1413,10 @@ cma = CMA()
 
 """VOL Factor"""
 def VOL():
+    """
+    Volatility factor based on the 12-month rolling volatility.
+
+    """
     position_small = factor_building(mktcap_spi_cons, quantile=0.5, long_above_quantile=False, ew_position=False).replace(0, np.nan)
     position_small_high = factor_building((roll_vol_spi_cons*position_small), quantile=0.60, long_above_quantile=True, ew_position=False)
     position_small_low = factor_building((roll_vol_spi_cons*position_small), quantile=0.40, long_above_quantile=False, ew_position=False)
@@ -1147,10 +1543,21 @@ ff_merged_parametrics_combineCW.to_latex('Output/FF/ff_merged_parametrics_combin
 # =============================================================================
 # =============================================================================
 
+"""
+In this section, we will perform a sensitivity analysis on 3 different parameters of our model
+to check its robustness. We will perform it on 
+
+    - The quantile chosen to set a liquidity constraint in our portfolio allocation
+    - The quantile chosen to construct the eight different factors of section 4
+    - The combination between the portfolio and benchmark to reduce the tracking-error.
+
+"""
+
 # =============================================================================
 # 7.1) Liquidity Constraint Sensitivity
 # =============================================================================
 
+# Create list to collect the results of the sensitivity
 list_return_mom_factors_noTE = [cw_spi_index]
 list_return_mom_factors_combineCW = [cw_spi_index]
 list_perf_mom_factors = []
@@ -1167,6 +1574,7 @@ list_return_parametrics_noTE = [cw_spi_index]
 list_return_parametrics_combineCW = [cw_spi_index]
 list_perf_parametrics = []
 
+# Run the sensitivity
 for k in [0, 0.1, 0.3, 0.5]:
     price_spi_cons, pe_spi_cons, dividend_spi_cons, mktcap_spi_cons, beta_spi_cons, vol_spi_cons, roe_spi_con, roa_spi_con, gm_spi_cons, eps_spi_cons, trade_liq = liqudity_constraint(k)
     returns_factors, position_factors = run_factor_building(quantile = 0.5)
@@ -1304,6 +1712,7 @@ perf_parametrics_liqsentivity.to_latex('Output/Sensitivity/Liquidity/perf_parame
 # 7.2) Factor Construction Quantile Sensitivity        
 # =============================================================================
 
+# Create list to collect the results of the sensitivity
 list_return_mom_factors_noTE = [cw_spi_index]
 list_return_mom_factors_combineCW = [cw_spi_index]
 list_perf_mom_factors = []
@@ -1320,6 +1729,7 @@ list_return_parametrics_noTE = [cw_spi_index]
 list_return_parametrics_combineCW = [cw_spi_index]
 list_perf_parametrics = []
 
+# Run the sensitivity
 for k in [0.2, 0.3, 0.4, 0.6]:
     price_spi_cons, pe_spi_cons, dividend_spi_cons, mktcap_spi_cons, beta_spi_cons, vol_spi_cons, roe_spi_con, roa_spi_con, gm_spi_cons, eps_spi_cons, trade_liq = liqudity_constraint(0.25)
     returns_factors, position_factors = run_factor_building(quantile = k)
@@ -1461,6 +1871,7 @@ perf_parametrics_fsensitivity.to_latex('Output/Sensitivity/FactorQuantile/perf_p
 price_spi_cons, pe_spi_cons, dividend_spi_cons, mktcap_spi_cons, beta_spi_cons, vol_spi_cons, roe_spi_con, roa_spi_con, gm_spi_cons, eps_spi_cons, trade_liq = liqudity_constraint(0.25)
 returns_factors, position_factors = run_factor_building(quantile = 0.5)
 
+# Create list to collect the results of the sensitivity
 mom_factor_return_cwsensitivity = pd.DataFrame({'CW Benchmark': cw_spi_index})
 erc_return_cwsensitivity = pd.DataFrame({'CW Benchmark': cw_spi_index})
 ridge_return_cwsensitivity = pd.DataFrame({'CW Benchmark': cw_spi_index})
@@ -1471,6 +1882,7 @@ list_perf_erc = []
 list_perf_ridge = []
 list_perf_parametrics = []
 
+# Run the sensitivity
 for k in [0.5, 0.6, 0.7, 0.9]:
     ### Momentum of Factor ###    
     """TE Monitor by Combining it with the CW Benchmark"""
@@ -1547,8 +1959,20 @@ perf_parametrics_cwsentivity.to_latex('Output/Sensitivity/CW/perf_parametrics_cw
 # =============================================================================
 # =============================================================================
 
+"""
+This section aims to collect data and result to be included in our dashboard. The dashboard is 
+divided into five different categories:
+    
+    - Overview
+    - Defensive Portfolio (Ridge Regression)
+    - Balanced Portfolio (Parametric Portfolio with VIX)
+    - Dynamic Portfolio (Momentum of Factors)
+    - News
+
+"""
+
 # =============================================================================
-# 8.0) Overview
+# 8.1) Overview
 # =============================================================================
 
 """All basis portfolio returns"""
@@ -1571,7 +1995,7 @@ dash_perf_all_basis = pd.concat([pd.DataFrame(dash_perf_all_label, index={''}), 
 dash_perf_all_basis.to_csv('dash-financial-report/data/perf_all_basis.csv')
 
 # =============================================================================
-# 8.1) Defensive Portfolio
+# 8.2) Defensive Portfolio (Ridge Regression)
 # =============================================================================
 
 """Performance Table"""
@@ -1606,7 +2030,7 @@ dash_avg_returns_ridge = pd.concat([pd.DataFrame(dash_avg_returns_ridge_label, i
 dash_avg_returns_ridge.to_csv('dash-financial-report/data/avg_returns_ridge.csv')
 
 # =============================================================================
-# 8.2) Balanced Portfolio
+# 8.3) Balanced Portfolio (Parametric Portfolio with VIX)
 # =============================================================================
 
 """Performance Table"""
@@ -1639,7 +2063,7 @@ dash_avg_returns_parametrics = pd.concat([pd.DataFrame(dash_avg_returns_parametr
 dash_avg_returns_parametrics.to_csv('dash-financial-report/data/avg_returns_parametrics.csv')
 
 # =============================================================================
-# 8.3) Dynamic Portfolio
+# 8.4) Dynamic Portfolio (Momentum of Factors)
 # =============================================================================
 
 """Performance Table"""
