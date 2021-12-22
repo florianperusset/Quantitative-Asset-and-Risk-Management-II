@@ -16,31 +16,31 @@ Supervisor: Prof. Fabio Alessandrini, CIO of Quantitative and Alternative Invest
 
 ## Data
 To build our factors for our portfolio construction, we first determined all companies which have been listed from January 2009 to November 2021 in the Swiss Performance Index. We collected thenfrom Reuters Datastream the following metrics of these constituents of the SPI from January 2000 to November 2021 (monthly data):
-     * Price
-     * Price-to-Earnings
-     * Dividend yield
-     * Market Cap
-     * Beta
-     * Volatility (unused)
-     * ROE (unused)
-     * ROA (unused)
-     * Gross Margin 
-     * EPS
-     * Volume traded
-     * Industry Classification
-     * Market-to-book 
-     * Investments
-     * Operating Profitability
+* Price
+* Price-to-Earnings
+* Dividend yield
+* Market Cap
+* Beta
+* Volatility (unused)
+* ROE (unused)
+* ROA (unused)
+* Gross Margin 
+* EPS
+* Volume traded
+* Industry Classification
+* Market-to-book 
+* Investments
+* Operating Profitability
   
 We then collect all necessary macro data to time the factors and 
 perform an analysis of the porfolio. We collected from the Federal Reserve of 
-Economic Data the following metrics: 
-    * Long-Term Government Bond Yields: 10-year: Main (Including Benchmark) for Switzerland (Monthly)
-    * Long-Term Government Bond Yields: 10-year: Main (Including Benchmark) for the United States
-    * CBOE Volatility Index: VIX (Daily)
-    * Consumer Price Index: All Items for Switzerland (Monthly)
-    * Consumer Price Index for All Urban Consumers: All Items in U.S. City Average (Monthly)
-    * TED rate spread between 3-Month LIBOR based on US dollars and 3-Month Treasury Bill (Daily)
-    * 3-Month London Interbank Offered Rate (LIBOR), based on U.S. Dollar
-    * 12-Month London Interbank Offered Rate (LIBOR), based on U.S. Dollar
-    * 1-Month London Interbank Offered Rate (LIBOR), based on Swiss Franc
+Economic Data the following metrics (monthly data): 
+* Long-Term Government Bond Yields: 10-year: Main (Including Benchmark) for Switzerland
+* Long-Term Government Bond Yields: 10-year: Main (Including Benchmark) for the United States
+* CBOE Volatility Index: VIX
+* Consumer Price Index: All Items for Switzerland
+* Consumer Price Index for All Urban Consumers: All Items in U.S. City Average
+* TED rate spread between 3-Month LIBOR based on US dollars and 3-Month Treasury Bill
+* 3-Month London Interbank Offered Rate (LIBOR), based on U.S. Dollar
+* 12-Month London Interbank Offered Rate (LIBOR), based on U.S. Dollar
+* 1-Month London Interbank Offered Rate (LIBOR), based on Swiss Franc
