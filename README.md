@@ -44,3 +44,26 @@ Economic Data the following metrics (monthly data):
 * 3-Month London Interbank Offered Rate (LIBOR), based on U.S. Dollar
 * 12-Month London Interbank Offered Rate (LIBOR), based on U.S. Dollar
 * 1-Month London Interbank Offered Rate (LIBOR), based on Swiss Franc
+
+## Methodology
+We first considered eight popular factors to build our portfolios of factor:
+* Momentum (12-months average return)
+* Value (E/P)
+* Size (Market cap)
+* Profitability (Gross margin)
+* Low-Beta (Beta)
+* Low-Volatility (12-months rolling variance)
+* Dividend (Dividend yield)
+* Quality Earnings (EPS)
+We take either a long position above or below a certain quantile depending on the factor, and remove illiquid companies.
+
+We then considered four different methodologies to build our portfolio, in which one does not tilt the factors:
+
+* No Factor Tilting:
+** Equal-Risk Contribution
+* Factor Tilting:
+** Ridge Regression, based on Ulloa, Giamouridis & Montagu (2012) - Risk Reduction in Style Rotation
+** Momentum of Factors
+** Parametric Weights, based on Brandt & Santa-Clara (2006) - Dynamic Portfolio Selection by Augmenting the Asset Space
+
+
