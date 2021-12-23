@@ -6,7 +6,7 @@ Project on "Style Rotation on Swiss Long-Only Equity Factors" as part of the cou
 
 Authors: Sebastien Gorgoni, Florian Perusset, Florian Vogt
 
-Supervisor: Prof. Fabio Alessandrini, CIO of Quantitative and Alternative Investments at Banque Cantonale Vaudoise
+Supervisor: Prof. Fabio Alessandrini
 
 ## Objective
 * Our client is a large Swiss pension fund who has a substantial allocation to Swiss equities. He is a firm believer of risk premia and is fully convinced by the long-term benefits of tilting his portfolio to reap the benefits of well-known risk premia.
